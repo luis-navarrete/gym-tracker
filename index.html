@@ -210,6 +210,24 @@ html, body { height:100%; background:var(--bg); color:var(--text); font-family:v
 }
 .del-set-btn:hover { color:var(--red); }
 
+/* unit toggle */
+.unit-toggle-wrap {
+  padding:0 16px 8px; display:flex; align-items:center; gap:10px;
+}
+.unit-toggle-label { font-size:10px; letter-spacing:1.5px; text-transform:uppercase; color:var(--dim); }
+.unit-toggle {
+  display:flex; background:var(--s2); border:1px solid var(--border);
+  border-radius:var(--radius); overflow:hidden;
+}
+.unit-opt {
+  font-family:var(--font); font-size:11px; font-weight:600;
+  padding:4px 14px; border:none; background:transparent;
+  color:var(--dim); cursor:pointer; transition:all 0.15s;
+}
+.unit-opt.active {
+  background:var(--accent-dim); color:var(--accent);
+}
+
 .weight-adjust {
   display:flex; align-items:center; gap:0;
 }
@@ -653,9 +671,16 @@ canvas#progressChart { width:100% !important; }
       <div class="pb-label">Previous best</div>
       <div class="pb-value" id="prev-best-val">—</div>
     </div>
+    <div class="unit-toggle-wrap">
+      <span class="unit-toggle-label">Unit</span>
+      <div class="unit-toggle">
+        <button class="unit-opt active" id="unit-kg" onclick="setUnit('kg')">kg</button>
+        <button class="unit-opt" id="unit-lb" onclick="setUnit('lb')">lb</button>
+      </div>
+    </div>
     <div class="sets-area">
       <div class="sets-head">
-        <span>Set</span><span>kg</span><span>Reps</span><span>Note</span><span></span>
+        <span>Set</span><span id="weight-unit-label">kg</span><span>Reps</span><span>Note</span><span></span>
       </div>
       <div id="sets-container"></div>
     </div>
@@ -846,6 +871,7 @@ let allExerciseNames = [];
 let restTimerInterval = null;
 let restTimeLeft = 0;
 let restTotalTime = 0;
+let currentUnit = localStorage.getItem('gymtracker_unit') || 'kg';
 
 const STORAGE_KEY = 'gymtracker_v1';
 
@@ -1053,26 +1079,93 @@ function parseTargetSets(target) {
   return m ? parseInt(m[1]) : 0;
 }
 
+function kgToLb(kg) { return +(kg * 2.20462).toFixed(1); }
+function lbToKg(lb) { return +(lb / 2.20462).toFixed(1); }
+
+function displayWeight(kgVal) {
+  if (kgVal === '' || kgVal === undefined) return '';
+  const v = parseFloat(kgVal);
+  if (isNaN(v)) return kgVal;
+  return currentUnit === 'lb' ? String(kgToLb(v)) : String(v);
+}
+
+function toStorageWeight(displayVal) {
+  if (displayVal === '' || displayVal === undefined) return '';
+  const v = parseFloat(displayVal);
+  if (isNaN(v)) return displayVal;
+  return currentUnit === 'lb' ? String(lbToKg(v)) : String(v);
+}
+
+function setUnit(unit) {
+  if (unit === currentUnit) return;
+  const oldUnit = currentUnit;
+  currentUnit = unit;
+  localStorage.setItem('gymtracker_unit', unit);
+
+  document.getElementById('unit-kg').classList.toggle('active', unit === 'kg');
+  document.getElementById('unit-lb').classList.toggle('active', unit === 'lb');
+  document.getElementById('weight-unit-label').textContent = unit;
+
+  pendingSets.forEach(s => {
+    if (s.weight === '') return;
+    const v = parseFloat(s.weight);
+    if (isNaN(v)) return;
+    if (oldUnit === 'kg' && unit === 'lb') {
+      s.weight = String(kgToLb(v));
+    } else if (oldUnit === 'lb' && unit === 'kg') {
+      s.weight = String(lbToKg(v));
+    }
+  });
+
+  renderSets();
+
+  if (modalExercise) {
+    const data = loadData();
+    const best = getBestLog(data, currentProfile, modalExercise.name);
+    const u = currentUnit;
+    document.getElementById('prev-best-val').innerHTML = best
+      ? `<strong>${displayWeight(best.weight)}${u} × ${best.reps}</strong>${best.note ? ' — ' + best.note : ''}`
+      : '—';
+  }
+}
+
+function syncUnitToggle() {
+  document.getElementById('unit-kg').classList.toggle('active', currentUnit === 'kg');
+  document.getElementById('unit-lb').classList.toggle('active', currentUnit === 'lb');
+  document.getElementById('weight-unit-label').textContent = currentUnit;
+}
+
 function openModal(dayIdx, exIdx, ex) {
   modalExercise = { dayIdx, exIdx, name: ex.name, target: ex.target };
   document.getElementById('modal-ex-name').textContent = ex.name;
   document.getElementById('modal-ex-target').textContent = ex.target + (ex.note ? '  ·  ' + ex.note : '');
 
+  syncUnitToggle();
+
   const data = loadData();
   const best = getBestLog(data, currentProfile, ex.name);
+  const u = currentUnit;
   document.getElementById('prev-best-val').innerHTML = best
-    ? `<strong>${best.weight}kg × ${best.reps}</strong>${best.note ? ' — ' + best.note : ''}`
+    ? `<strong>${displayWeight(best.weight)}${u} × ${best.reps}</strong>${best.note ? ' — ' + best.note : ''}`
     : '—';
 
   const todayStr = toDateStr(new Date());
   const existing = getTodayLog(data, currentProfile, todayStr, dayIdx, exIdx);
 
   if (existing) {
-    pendingSets = existing.sets.map(s => ({...s}));
+    pendingSets = existing.sets.map(s => ({
+      weight: displayWeight(s.weight),
+      reps: s.reps || '',
+      note: s.note || ''
+    }));
   } else {
     const lastSets = getLastSessionSets(data, currentProfile, ex.name);
     if (lastSets) {
-      pendingSets = lastSets.map(s => ({ weight: s.weight || '', reps: s.reps || '', note: '' }));
+      pendingSets = lastSets.map(s => ({
+        weight: displayWeight(s.weight),
+        reps: s.reps || '',
+        note: ''
+      }));
     } else {
       const numSets = parseTargetSets(ex.target) || 1;
       pendingSets = Array.from({ length: numSets }, () => ({ weight: '', reps: '', note: '' }));
@@ -1136,8 +1229,10 @@ function escapeHtml(str) {
 }
 
 function adjustWeight(index, delta) {
+  const step = currentUnit === 'lb' ? 5 : 2.5;
+  const d = delta > 0 ? step : -step;
   const current = parseFloat(pendingSets[index].weight) || 0;
-  const newVal = Math.max(0, current + delta);
+  const newVal = Math.max(0, current + d);
   pendingSets[index].weight = String(newVal % 1 === 0 ? newVal : newVal.toFixed(1));
   renderSets();
 }
@@ -1191,7 +1286,7 @@ function saveSets() {
   }
 
   const sanitized = filled.map(s => ({
-    weight: s.weight === '' ? '' : String(Math.max(0, parseFloat(s.weight) || 0)),
+    weight: s.weight === '' ? '' : String(Math.max(0, parseFloat(toStorageWeight(s.weight)) || 0)),
     reps: s.reps === '' ? '' : String(Math.max(0, parseInt(s.reps) || 0)),
     note: (s.note || '').trim()
   }));
