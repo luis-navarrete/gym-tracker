@@ -871,7 +871,20 @@ let allExerciseNames = [];
 let restTimerInterval = null;
 let restTimeLeft = 0;
 let restTotalTime = 0;
-let currentUnit = localStorage.getItem('gymtracker_unit') || 'kg';
+let currentUnit = 'kg';
+const UNIT_STORAGE_KEY = 'gymtracker_units';
+
+function loadUnitPrefs() {
+  try { return JSON.parse(localStorage.getItem(UNIT_STORAGE_KEY)) || {}; } catch { return {}; }
+}
+function saveUnitPref(exName, unit) {
+  const prefs = loadUnitPrefs();
+  prefs[exName] = unit;
+  localStorage.setItem(UNIT_STORAGE_KEY, JSON.stringify(prefs));
+}
+function getUnitForExercise(exName) {
+  return loadUnitPrefs()[exName] || 'kg';
+}
 
 const STORAGE_KEY = 'gymtracker_v1';
 
@@ -1100,7 +1113,7 @@ function setUnit(unit) {
   if (unit === currentUnit) return;
   const oldUnit = currentUnit;
   currentUnit = unit;
-  localStorage.setItem('gymtracker_unit', unit);
+  if (modalExercise) saveUnitPref(modalExercise.name, unit);
 
   document.getElementById('unit-kg').classList.toggle('active', unit === 'kg');
   document.getElementById('unit-lb').classList.toggle('active', unit === 'lb');
@@ -1140,6 +1153,7 @@ function openModal(dayIdx, exIdx, ex) {
   document.getElementById('modal-ex-name').textContent = ex.name;
   document.getElementById('modal-ex-target').textContent = ex.target + (ex.note ? '  ·  ' + ex.note : '');
 
+  currentUnit = getUnitForExercise(ex.name);
   syncUnitToggle();
 
   const data = loadData();
