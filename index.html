@@ -922,6 +922,7 @@ let restTotalTime = 0;
 let currentUnit = 'kg';
 let calViewDate = new Date();
 let calSelectedDate = null;
+const profileModalState = { luis: null, her: null };
 const UNIT_STORAGE_KEY = 'gymtracker_units';
 
 function loadUnitPrefs() {
@@ -950,13 +951,53 @@ function saveData(data) {
 // PROFILE
 // ─────────────────────────────────────────
 function switchProfile(p) {
+  if (p === currentProfile) return;
+  const prev = currentProfile;
+
+  if (modalExercise) {
+    profileModalState[prev] = {
+      exercise: { ...modalExercise },
+      sets: pendingSets.map(s => ({ ...s })),
+      unit: currentUnit
+    };
+    document.getElementById('log-modal').classList.remove('open');
+  } else {
+    profileModalState[prev] = null;
+  }
+
   currentProfile = p;
+  calSelectedDate = null;
   document.getElementById('app').className = p === 'her' ? 'profile-her' : '';
   document.getElementById('btn-luis').className = 'pt-btn' + (p === 'luis' ? ' active-luis' : '');
   document.getElementById('btn-her').className = 'pt-btn' + (p === 'her' ? ' active-her' : '');
   document.getElementById('btn-luis').setAttribute('aria-checked', p === 'luis');
   document.getElementById('btn-her').setAttribute('aria-checked', p === 'her');
   refreshCurrentPage();
+
+  const saved = profileModalState[p];
+  if (saved) {
+    modalExercise = saved.exercise;
+    pendingSets = saved.sets;
+    currentUnit = saved.unit;
+    const ex = saved.exercise;
+    document.getElementById('modal-ex-name').textContent = ex.name;
+
+    const routine = ROUTINES[p];
+    const routineDay = routine[ex.dayIdx];
+    const routineEx = routineDay ? routineDay.exercises[ex.exIdx] : null;
+    const note = routineEx ? routineEx.note : '';
+    document.getElementById('modal-ex-target').textContent = ex.target + (note ? '  ·  ' + note : '');
+
+    syncUnitToggle();
+    const data = loadData();
+    const best = getBestLog(data, currentProfile, ex.name);
+    const u = currentUnit;
+    document.getElementById('prev-best-val').innerHTML = best
+      ? `<strong>${displayWeight(best.weight)}${u} × ${best.reps}</strong>${best.note ? ' — ' + best.note : ''}`
+      : '—';
+    renderSets();
+    document.getElementById('log-modal').classList.add('open');
+  }
 }
 
 // ─────────────────────────────────────────
@@ -1243,6 +1284,7 @@ function openModal(dayIdx, exIdx, ex) {
 function closeModal() {
   document.getElementById('log-modal').classList.remove('open');
   modalExercise = null;
+  profileModalState[currentProfile] = null;
 }
 
 function closeModalOutside(e) {
