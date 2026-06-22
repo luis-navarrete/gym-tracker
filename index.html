@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover">
 <title>Gym Tracker</title>
 <meta name="description" content="Personal gym workout tracker">
 <meta name="theme-color" content="#0e0e0f">
@@ -57,7 +57,7 @@ html, body { height:100%; background:var(--bg); color:var(--text); font-family:v
 @media (min-width:1024px) {
   #app { max-width:720px; }
 }
-#screen { flex:1; overflow-y:auto; overflow-x:hidden; padding-bottom:72px; }
+#screen { flex:1; overflow-y:auto; overflow-x:hidden; padding-bottom:calc(72px + env(safe-area-inset-bottom, 8px)); }
 #screen::-webkit-scrollbar { width:3px; }
 #screen::-webkit-scrollbar-thumb { background:var(--border2); border-radius:2px; }
 
@@ -85,6 +85,7 @@ html, body { height:100%; background:var(--bg); color:var(--text); font-family:v
   display:flex; position:fixed; bottom:0; left:50%; transform:translateX(-50%);
   width:100%; max-width:480px;
   background:var(--s1); border-top:1px solid var(--border);
+  padding-bottom:env(safe-area-inset-bottom, 8px);
   z-index:100;
 }
 @media (min-width:768px) {
