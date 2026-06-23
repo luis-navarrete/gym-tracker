@@ -108,7 +108,7 @@ html, body { height:100%; background:var(--bg); color:var(--text); font-family:v
 .page.active { display:block; }
 
 /* ── TODAY PAGE ── */
-.today-header { padding:20px 16px 12px; }
+.today-header { padding:20px 16px 12px; position:sticky; top:0; z-index:10; background:var(--bg); }
 .today-date { font-size:11px; font-weight:500; letter-spacing:2px; text-transform:uppercase; color:var(--muted); margin-bottom:4px; }
 .today-day { font-size:28px; font-weight:900; letter-spacing:-0.5px; line-height:1; }
 .today-day span { color:var(--accent); }
@@ -210,6 +210,13 @@ html, body { height:100%; background:var(--bg); color:var(--text); font-family:v
   transition:color 0.15s;
 }
 .del-set-btn:hover { color:var(--red); }
+.set-row.perside { grid-template-columns:28px 1fr 24px; gap:5px; }
+.perside-sides { display:flex; flex-direction:column; gap:4px; }
+.perside-side {
+  display:grid; grid-template-columns:14px minmax(0,1.4fr) minmax(0,0.8fr) minmax(0,1fr);
+  gap:5px; align-items:center;
+}
+.side-label { font-size:10px; font-weight:700; color:var(--muted); text-align:center; }
 
 /* unit toggle */
 .unit-toggle-wrap {
@@ -357,7 +364,7 @@ html, body { height:100%; background:var(--bg); color:var(--text); font-family:v
 .rd-ex-note { font-size:11px; color:var(--muted); margin-top:2px; font-style:italic; }
 
 /* ── HISTORY PAGE ── */
-.history-header { padding:20px 16px 12px; display:flex; align-items:center; justify-content:space-between; }
+.history-header { padding:20px 16px 12px; display:flex; align-items:center; justify-content:space-between; position:sticky; top:0; z-index:10; background:var(--bg); }
 .history-title { font-size:22px; font-weight:900; letter-spacing:-0.3px; }
 .history-empty { padding:48px 16px; text-align:center; color:var(--dim); font-size:13px; }
 
@@ -433,7 +440,7 @@ html, body { height:100%; background:var(--bg); color:var(--text); font-family:v
 .del-session-btn:hover { color:var(--red); background:var(--red-dim); }
 
 /* ── PROGRESS PAGE ── */
-.progress-header { padding:20px 16px 12px; }
+.progress-header { padding:20px 16px 12px; position:sticky; top:0; z-index:10; background:var(--bg); }
 .progress-title { font-size:22px; font-weight:900; letter-spacing:-0.3px; }
 .ex-picker-wrap { padding:0 16px 12px; position:relative; }
 .ex-picker {
@@ -522,7 +529,7 @@ canvas#bodyChart { width:100% !important; }
 .body-stats-row { display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; margin-bottom:16px; }
 
 /* ── SETTINGS PAGE ── */
-.settings-header { padding:20px 16px 12px; }
+.settings-header { padding:20px 16px 12px; position:sticky; top:0; z-index:10; background:var(--bg); }
 .settings-title { font-size:22px; font-weight:900; letter-spacing:-0.3px; }
 .settings-section { padding:0 16px 20px; }
 .settings-section-title {
@@ -585,6 +592,7 @@ canvas#bodyChart { width:100% !important; }
   padding:16px 16px 8px;
   font-size:10px; font-weight:600; letter-spacing:2px;
   text-transform:uppercase; color:var(--dim);
+  position:sticky; top:0; z-index:10; background:var(--bg);
 }
 
 /* ── WEEKLY STATS ── */
@@ -808,8 +816,15 @@ canvas#bodyChart { width:100% !important; }
         <button class="unit-opt" id="unit-lb" onclick="setUnit('lb')">lb</button>
       </div>
     </div>
+    <div class="unit-toggle-wrap" id="perside-toggle-wrap" style="display:none">
+      <span class="unit-toggle-label">Per side</span>
+      <div class="unit-toggle">
+        <button class="unit-opt" id="perside-off" onclick="togglePerSide(false)">No</button>
+        <button class="unit-opt active" id="perside-on" onclick="togglePerSide(true)">L / R</button>
+      </div>
+    </div>
     <div class="sets-area">
-      <div class="sets-head">
+      <div class="sets-head" id="sets-head-row">
         <span>Set</span><span id="weight-unit-label">kg</span><span>Reps</span><span>Note</span><span></span>
       </div>
       <div id="sets-container"></div>
@@ -1008,6 +1023,7 @@ const profileModalState = { luis: null, her: null };
 const UNIT_STORAGE_KEY = 'gymtracker_units';
 const BODY_STORAGE_KEY = 'gymtracker_body';
 let progressTab = 'body';
+let perSideMode = false;
 
 function loadUnitPrefs() {
   try { return JSON.parse(localStorage.getItem(UNIT_STORAGE_KEY)) || {}; } catch { return {}; }
@@ -1042,7 +1058,8 @@ function switchProfile(p) {
     profileModalState[prev] = {
       exercise: { ...modalExercise },
       sets: pendingSets.map(s => ({ ...s })),
-      unit: currentUnit
+      unit: currentUnit,
+      perSide: perSideMode
     };
     document.getElementById('log-modal').classList.remove('open');
   } else {
@@ -1072,6 +1089,10 @@ function switchProfile(p) {
     const note = routineEx ? routineEx.note : '';
     document.getElementById('modal-ex-target').textContent = ex.target + (note ? '  ·  ' + note : '');
 
+    perSideMode = saved.perSide || false;
+    const persideWrap = document.getElementById('perside-toggle-wrap');
+    persideWrap.style.display = ex.perSide ? '' : 'none';
+    syncPerSideToggle();
     syncUnitToggle();
     const data = loadData();
     const best = getBestLog(data, currentProfile, ex.name);
@@ -1080,7 +1101,9 @@ function switchProfile(p) {
       ? `<strong>${displayWeight(best.weight)}${u} × ${best.reps}</strong>${best.note ? ' — ' + best.note : ''}`
       : '—';
     renderSets();
-    document.getElementById('log-modal').classList.add('open');
+    const modal = document.getElementById('log-modal');
+    modal.classList.toggle('profile-her', p === 'her');
+    modal.classList.add('open');
   }
 }
 
@@ -1267,6 +1290,15 @@ function parseTargetSets(target) {
   return m ? parseInt(m[1]) : 0;
 }
 
+function parseTargetReps(target) {
+  const m = target.match(/[×x]\s*(\d+)/i);
+  return m ? m[1] : '';
+}
+
+function isPerSideExercise(target) {
+  return /\/(side|leg|arm)/i.test(target);
+}
+
 function kgToLb(kg) { return +(kg * 2.20462).toFixed(1); }
 function lbToKg(lb) { return +(lb / 2.20462).toFixed(1); }
 
@@ -1324,7 +1356,8 @@ function syncUnitToggle() {
 }
 
 function openModal(dayIdx, exIdx, ex) {
-  modalExercise = { dayIdx, exIdx, name: ex.name, target: ex.target };
+  const perSide = isPerSideExercise(ex.target);
+  modalExercise = { dayIdx, exIdx, name: ex.name, target: ex.target, perSide };
   document.getElementById('modal-ex-name').textContent = ex.name;
   document.getElementById('modal-ex-target').textContent = ex.target + (ex.note ? '  ·  ' + ex.note : '');
 
@@ -1342,27 +1375,44 @@ function openModal(dayIdx, exIdx, ex) {
   const existing = getTodayLog(data, currentProfile, todayStr, dayIdx, exIdx);
 
   if (existing) {
-    pendingSets = existing.sets.map(s => ({
-      weight: displayWeight(s.weight),
-      reps: s.reps || '',
-      note: s.note || ''
-    }));
+    pendingSets = existing.sets.map(s => {
+      const entry = { weight: displayWeight(s.weight), reps: s.reps || '', note: s.note || '' };
+      if (s.weightR !== undefined) {
+        entry.weightR = displayWeight(s.weightR);
+        entry.repsR = s.repsR || '';
+        entry.noteR = s.noteR || '';
+      }
+      return entry;
+    });
   } else {
     const lastSets = getLastSessionSets(data, currentProfile, ex.name);
     if (lastSets) {
-      pendingSets = lastSets.map(s => ({
-        weight: displayWeight(s.weight),
-        reps: s.reps || '',
-        note: ''
-      }));
+      pendingSets = lastSets.map(s => {
+        const entry = { weight: displayWeight(s.weight), reps: s.reps || '', note: '' };
+        if (s.weightR !== undefined) {
+          entry.weightR = displayWeight(s.weightR);
+          entry.repsR = s.repsR || '';
+          entry.noteR = '';
+        }
+        return entry;
+      });
     } else {
       const numSets = parseTargetSets(ex.target) || 1;
-      pendingSets = Array.from({ length: numSets }, () => ({ weight: '', reps: '', note: '' }));
+      const defaultReps = parseTargetReps(ex.target);
+      pendingSets = Array.from({ length: numSets }, () => ({ weight: '', reps: defaultReps, note: '' }));
     }
   }
 
+  const hasPerSideData = pendingSets.some(s => s.weightR !== undefined);
+  perSideMode = hasPerSideData || false;
+  const persideWrap = document.getElementById('perside-toggle-wrap');
+  persideWrap.style.display = perSide ? '' : 'none';
+  syncPerSideToggle();
+
   renderSets();
-  document.getElementById('log-modal').classList.add('open');
+  const modal = document.getElementById('log-modal');
+  modal.classList.toggle('profile-her', currentProfile === 'her');
+  modal.classList.add('open');
 }
 
 function closeModal() {
@@ -1377,25 +1427,68 @@ function closeModalOutside(e) {
 
 function renderSets() {
   const container = document.getElementById('sets-container');
+  const headRow = document.getElementById('sets-head-row');
   container.innerHTML = '';
-  pendingSets.forEach((s, i) => {
-    const row = document.createElement('div');
-    row.className = 'set-row';
-    row.innerHTML = `
-      <div class="set-num">${i+1}</div>
-      <div class="weight-adjust">
-        <button class="adj-btn" onclick="adjustWeight(${i},-2.5)" aria-label="Decrease weight">−</button>
-        <input class="set-input" type="number" placeholder="—" value="${s.weight}" min="0" step="0.5"
-          oninput="updateSet(${i},'weight',this)" aria-label="Set ${i+1} weight">
-        <button class="adj-btn" onclick="adjustWeight(${i},2.5)" aria-label="Increase weight">+</button>
-      </div>
-      <input class="set-input" type="number" placeholder="—" value="${s.reps}" min="0" step="1"
-        oninput="updateSet(${i},'reps',this)" aria-label="Set ${i+1} reps">
-      <input class="set-input note-input" type="text" placeholder="note…" value="${escapeAttr(s.note||'')}"
-        oninput="pendingSets[${i}].note=this.value" aria-label="Set ${i+1} note">
-      <button class="del-set-btn" onclick="removeSet(${i})" aria-label="Remove set ${i+1}">×</button>`;
-    container.appendChild(row);
-  });
+
+  if (perSideMode) {
+    headRow.style.display = 'none';
+    pendingSets.forEach((s, i) => {
+      const row = document.createElement('div');
+      row.className = 'set-row perside';
+      row.innerHTML = `
+        <div class="set-num">${i+1}</div>
+        <div class="perside-sides">
+          <div class="perside-side">
+            <span class="side-label">L</span>
+            <div class="weight-adjust">
+              <button class="adj-btn" onclick="adjustWeight(${i},-2.5,'weight')" aria-label="Decrease L weight">−</button>
+              <input class="set-input" type="number" placeholder="—" value="${s.weight}" min="0" step="0.5"
+                oninput="updateSet(${i},'weight',this)" aria-label="Set ${i+1} L weight">
+              <button class="adj-btn" onclick="adjustWeight(${i},2.5,'weight')" aria-label="Increase L weight">+</button>
+            </div>
+            <input class="set-input" type="number" placeholder="—" value="${s.reps}" min="0" step="1"
+              oninput="updateSet(${i},'reps',this)" aria-label="Set ${i+1} L reps">
+            <input class="set-input note-input" type="text" placeholder="note…" value="${escapeAttr(s.note||'')}"
+              oninput="pendingSets[${i}].note=this.value" aria-label="Set ${i+1} L note">
+          </div>
+          <div class="perside-side">
+            <span class="side-label">R</span>
+            <div class="weight-adjust">
+              <button class="adj-btn" onclick="adjustWeight(${i},-2.5,'weightR')" aria-label="Decrease R weight">−</button>
+              <input class="set-input" type="number" placeholder="—" value="${s.weightR||''}" min="0" step="0.5"
+                oninput="updateSet(${i},'weightR',this)" aria-label="Set ${i+1} R weight">
+              <button class="adj-btn" onclick="adjustWeight(${i},2.5,'weightR')" aria-label="Increase R weight">+</button>
+            </div>
+            <input class="set-input" type="number" placeholder="—" value="${s.repsR||''}" min="0" step="1"
+              oninput="updateSet(${i},'repsR',this)" aria-label="Set ${i+1} R reps">
+            <input class="set-input note-input" type="text" placeholder="note…" value="${escapeAttr(s.noteR||'')}"
+              oninput="pendingSets[${i}].noteR=this.value" aria-label="Set ${i+1} R note">
+          </div>
+        </div>
+        <button class="del-set-btn" onclick="removeSet(${i})" aria-label="Remove set ${i+1}">×</button>`;
+      container.appendChild(row);
+    });
+  } else {
+    headRow.style.display = '';
+    pendingSets.forEach((s, i) => {
+      const row = document.createElement('div');
+      row.className = 'set-row';
+      row.innerHTML = `
+        <div class="set-num">${i+1}</div>
+        <div class="weight-adjust">
+          <button class="adj-btn" onclick="adjustWeight(${i},-2.5,'weight')" aria-label="Decrease weight">−</button>
+          <input class="set-input" type="number" placeholder="—" value="${s.weight}" min="0" step="0.5"
+            oninput="updateSet(${i},'weight',this)" aria-label="Set ${i+1} weight">
+          <button class="adj-btn" onclick="adjustWeight(${i},2.5,'weight')" aria-label="Increase weight">+</button>
+        </div>
+        <input class="set-input" type="number" placeholder="—" value="${s.reps}" min="0" step="1"
+          oninput="updateSet(${i},'reps',this)" aria-label="Set ${i+1} reps">
+        <input class="set-input note-input" type="text" placeholder="note…" value="${escapeAttr(s.note||'')}"
+          oninput="pendingSets[${i}].note=this.value" aria-label="Set ${i+1} note">
+        <button class="del-set-btn" onclick="removeSet(${i})" aria-label="Remove set ${i+1}">×</button>`;
+      container.appendChild(row);
+    });
+  }
 }
 
 function updateSet(index, field, input) {
@@ -1418,24 +1511,47 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
-function adjustWeight(index, delta) {
+function togglePerSide(on) {
+  perSideMode = on;
+  syncPerSideToggle();
+  if (on) {
+    pendingSets.forEach(s => {
+      if (s.weightR === undefined) {
+        s.weightR = s.weight; s.repsR = s.reps;
+      }
+    });
+  }
+  renderSets();
+}
+
+function syncPerSideToggle() {
+  document.getElementById('perside-on').classList.toggle('active', perSideMode);
+  document.getElementById('perside-off').classList.toggle('active', !perSideMode);
+}
+
+function adjustWeight(index, delta, field) {
+  field = field || 'weight';
   const step = currentUnit === 'lb' ? 5 : 2.5;
   const d = delta > 0 ? step : -step;
-  const current = parseFloat(pendingSets[index].weight) || 0;
+  const current = parseFloat(pendingSets[index][field]) || 0;
   const newVal = Math.max(0, current + d);
-  pendingSets[index].weight = String(newVal % 1 === 0 ? newVal : newVal.toFixed(1));
+  pendingSets[index][field] = String(newVal % 1 === 0 ? newVal : newVal.toFixed(1));
   renderSets();
 }
 
 function addSet() {
-  pendingSets.push({ weight:'', reps:'', note:'' });
+  const s = { weight:'', reps:'', note:'' };
+  if (perSideMode) { s.weightR = ''; s.repsR = ''; s.noteR = ''; }
+  pendingSets.push(s);
   renderSets();
 }
 
 function duplicateLastSet() {
   if (!pendingSets.length) { addSet(); return; }
   const last = pendingSets[pendingSets.length - 1];
-  pendingSets.push({ weight: last.weight, reps: last.reps, note: '' });
+  const s = { weight: last.weight, reps: last.reps, note: '' };
+  if (perSideMode) { s.weightR = last.weightR || ''; s.repsR = last.repsR || ''; s.noteR = ''; }
+  pendingSets.push(s);
   renderSets();
 }
 
@@ -1447,19 +1563,18 @@ function removeSet(i) {
 
 function validateSets(sets) {
   let valid = true;
-  const inputs = document.querySelectorAll('.set-input');
-  inputs.forEach(inp => inp.classList.remove('invalid'));
+  document.querySelectorAll('.set-input').forEach(inp => inp.classList.remove('invalid'));
 
-  sets.forEach((s, i) => {
-    if (s.weight !== '' && (isNaN(parseFloat(s.weight)) || parseFloat(s.weight) < 0)) {
-      valid = false;
-      const row = document.querySelectorAll('.set-row')[i];
-      if (row) row.querySelectorAll('.set-input')[0].classList.add('invalid');
-    }
-    if (s.reps !== '' && (isNaN(parseInt(s.reps)) || parseInt(s.reps) < 0)) {
-      valid = false;
-      const row = document.querySelectorAll('.set-row')[i];
-      if (row) row.querySelectorAll('.set-input')[1].classList.add('invalid');
+  function checkVal(val, type) {
+    if (val === '' || val === undefined) return true;
+    if (type === 'w') return !(isNaN(parseFloat(val)) || parseFloat(val) < 0);
+    return !(isNaN(parseInt(val)) || parseInt(val) < 0);
+  }
+
+  sets.forEach(s => {
+    if (!checkVal(s.weight, 'w') || !checkVal(s.reps, 'r')) valid = false;
+    if (s.weightR !== undefined) {
+      if (!checkVal(s.weightR, 'w') || !checkVal(s.repsR, 'r')) valid = false;
     }
   });
   return valid;
@@ -1467,7 +1582,7 @@ function validateSets(sets) {
 
 function saveSets() {
   if (!modalExercise) return;
-  const filled = pendingSets.filter(s => s.weight !== '' || s.reps !== '');
+  const filled = pendingSets.filter(s => s.weight !== '' || s.reps !== '' || (s.weightR !== undefined && (s.weightR !== '' || s.repsR !== '')));
   if (!filled.length) { showToast('Enter at least one set'); return; }
 
   if (!validateSets(filled)) {
@@ -1475,11 +1590,19 @@ function saveSets() {
     return;
   }
 
-  const sanitized = filled.map(s => ({
-    weight: s.weight === '' ? '' : String(Math.max(0, parseFloat(toStorageWeight(s.weight)) || 0)),
-    reps: s.reps === '' ? '' : String(Math.max(0, parseInt(s.reps) || 0)),
-    note: (s.note || '').trim()
-  }));
+  const sanitized = filled.map(s => {
+    const entry = {
+      weight: s.weight === '' ? '' : String(Math.max(0, parseFloat(toStorageWeight(s.weight)) || 0)),
+      reps: s.reps === '' ? '' : String(Math.max(0, parseInt(s.reps) || 0)),
+      note: (s.note || '').trim()
+    };
+    if (perSideMode && s.weightR !== undefined) {
+      entry.weightR = s.weightR === '' ? '' : String(Math.max(0, parseFloat(toStorageWeight(s.weightR)) || 0));
+      entry.repsR = s.repsR === '' ? '' : String(Math.max(0, parseInt(s.repsR) || 0));
+      entry.noteR = (s.noteR || '').trim();
+    }
+    return entry;
+  });
 
   const data = loadData();
   if (!data[currentProfile]) data[currentProfile] = [];
