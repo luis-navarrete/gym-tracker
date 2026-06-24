@@ -176,27 +176,18 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
 
 .wo-logged-sets { padding:0 14px; }
 .wo-logged-set {
-  display:grid; grid-template-columns:20px 28px 1fr 1fr auto 28px; gap:4px; align-items:center;
+  display:grid; grid-template-columns:28px 1fr 1fr 28px; gap:4px; align-items:center;
   padding:7px 0; border-bottom:1px solid var(--border); font-size:13px;
 }
-.wo-drag-handle {
-  cursor:grab; color:var(--dim); font-size:14px; text-align:center;
-  touch-action:none; user-select:none; line-height:1;
-}
-.wo-drag-handle:active { cursor:grabbing; color:var(--muted); }
+.wo-logged-set:last-child { border-bottom:none; }
 .wo-set-num { font-size:12px; font-weight:600; color:var(--muted); text-align:center; }
+.wo-set-num.warmup { color:var(--accent); font-weight:700; }
 .wo-set-detail { font-weight:500; }
-.wo-warmup-tag {
-  font-size:9px; font-weight:700; letter-spacing:0.5px; color:var(--blue);
-  background:var(--blue-dim); padding:2px 6px; border-radius:2px;
-}
 .wo-del-set {
   background:none; border:none; color:var(--dim); cursor:pointer;
   font-size:14px; text-align:center; padding:0; line-height:1;
 }
 .wo-del-set:hover { color:var(--red); }
-.wo-logged-set.dragging { opacity:0.4; }
-.wo-logged-set.drag-over { border-top:2px solid var(--accent); }
 
 .wo-set-entry {
   padding:12px 14px; border-top:1px solid var(--border);
@@ -235,8 +226,9 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
   transition:all 0.15s; line-height:1;
 }
 .wo-warmup-toggle.active { background:var(--blue-dim); border-color:var(--blue); color:var(--blue); }
+.wo-log-row { display:flex; gap:8px; }
 .wo-log-set-btn {
-  width:100%; background:var(--accent); color:var(--bg); border:none;
+  flex:1; background:var(--accent); color:var(--bg); border:none;
   border-radius:var(--radius); font-family:var(--font); font-size:14px; font-weight:700;
   padding:12px; cursor:pointer;
 }
@@ -1399,23 +1391,19 @@ function renderWorkout() {
     cur.sets.forEach((s, si) => {
       const isWarmup = s.warmup;
       const numLabel = isWarmup ? 'W' : String(++workNum);
-      const warmTag = isWarmup ? '<span class="wo-warmup-tag">W</span>' : '';
+      const numClass = isWarmup ? 'wo-set-num warmup' : 'wo-set-num';
       if (s.weightR !== undefined) {
-        html += `<div class="wo-logged-set" draggable="true" data-idx="${si}">
-          <span class="wo-drag-handle" title="Drag to reorder">⠿</span>
-          <span class="wo-set-num">${numLabel}</span>
+        html += `<div class="wo-logged-set" data-idx="${si}">
+          <span class="${numClass}">${numLabel}</span>
           <span class="wo-set-detail">L: ${displayWeight(s.weight)}${currentUnit}×${s.reps} R: ${displayWeight(s.weightR)}${currentUnit}×${s.repsR}</span>
           <span></span>
-          ${warmTag}
           <button class="wo-del-set" onclick="deleteWorkoutSet(${si})" aria-label="Delete set">✕</button>
         </div>`;
       } else {
-        html += `<div class="wo-logged-set" draggable="true" data-idx="${si}">
-          <span class="wo-drag-handle" title="Drag to reorder">⠿</span>
-          <span class="wo-set-num">${numLabel}</span>
+        html += `<div class="wo-logged-set" data-idx="${si}">
+          <span class="${numClass}">${numLabel}</span>
           <span class="wo-set-detail">${displayWeight(s.weight)}${currentUnit}</span>
           <span class="wo-set-detail">${s.reps} reps</span>
-          ${warmTag}
           <button class="wo-del-set" onclick="deleteWorkoutSet(${si})" aria-label="Delete set">✕</button>
         </div>`;
       }
@@ -1439,17 +1427,18 @@ function renderWorkout() {
         <input type="number" id="wo-weight-r" value="${defWeight}" inputmode="decimal" placeholder="${currentUnit}" min="0" step="0.5">
         <input type="number" id="wo-reps-r" value="${targetReps}" inputmode="numeric" placeholder="reps" min="0">
       </div>`;
-      if (isFirst) html += `<div style="margin-bottom:8px"><button class="wo-warmup-toggle" id="wo-warmup-btn" onclick="this.classList.toggle('active')">W Warm-up</button></div>`;
     } else {
       html += `<div class="wo-input-label"><span>Weight (${currentUnit})</span><span>Reps</span></div>
       <div class="wo-set-entry-row">
         <input type="number" id="wo-weight" value="${defWeight}" inputmode="decimal" placeholder="${currentUnit}" min="0" step="0.5">
         <input type="number" id="wo-reps" value="${targetReps}" inputmode="numeric" placeholder="reps" min="0">
-        ${isFirst ? '<button class="wo-warmup-toggle" id="wo-warmup-btn" onclick="this.classList.toggle(\'active\')">W</button>' : ''}
       </div>`;
     }
 
-    html += `<button class="wo-log-set-btn" onclick="logWorkoutSet()">Log Set</button>
+    html += `<div class="wo-log-row">
+      <button class="wo-log-set-btn" onclick="logWorkoutSet()">Log Set</button>
+      ${isFirst ? '<button class="wo-warmup-toggle" id="wo-warmup-btn" onclick="this.classList.toggle(\'active\')">W</button>' : ''}
+    </div>
     </div>`;
   }
 
@@ -1472,7 +1461,6 @@ function renderWorkout() {
 
   container.innerHTML = html;
   updateWorkoutTimer();
-  initSetDragDrop();
   initSwipeGesture();
 
   container.querySelectorAll('.wo-set-entry-row input, .wo-perside-grid input').forEach(inp => {
@@ -1510,75 +1498,6 @@ function deleteWorkoutSet(idx) {
   wo.queue[wo.currentIdx].sets.splice(idx, 1);
   saveWorkoutProgress();
   renderWorkout();
-}
-
-function initSetDragDrop() {
-  const list = document.getElementById('wo-sets-list');
-  if (!list) return;
-  let dragIdx = null;
-  list.querySelectorAll('.wo-logged-set').forEach(el => {
-    el.addEventListener('dragstart', e => {
-      dragIdx = parseInt(el.dataset.idx);
-      el.classList.add('dragging');
-      e.dataTransfer.effectAllowed = 'move';
-    });
-    el.addEventListener('dragend', () => {
-      el.classList.remove('dragging');
-      list.querySelectorAll('.drag-over').forEach(x => x.classList.remove('drag-over'));
-    });
-    el.addEventListener('dragover', e => {
-      e.preventDefault();
-      e.dataTransfer.dropEffect = 'move';
-      el.classList.add('drag-over');
-    });
-    el.addEventListener('dragleave', () => el.classList.remove('drag-over'));
-    el.addEventListener('drop', e => {
-      e.preventDefault();
-      const dropIdx = parseInt(el.dataset.idx);
-      if (dragIdx !== null && dragIdx !== dropIdx) {
-        const wo = getWo();
-        const sets = wo.queue[wo.currentIdx].sets;
-        const [moved] = sets.splice(dragIdx, 1);
-        sets.splice(dropIdx, 0, moved);
-        saveWorkoutProgress();
-        renderWorkout();
-      }
-    });
-  });
-
-  let touchDragIdx = null, touchTarget = null;
-  list.querySelectorAll('.wo-drag-handle').forEach(handle => {
-    handle.addEventListener('touchstart', e => {
-      e.preventDefault();
-      const row = handle.closest('.wo-logged-set');
-      touchDragIdx = parseInt(row.dataset.idx);
-      row.classList.add('dragging');
-    }, { passive: false });
-  });
-  list.addEventListener('touchmove', e => {
-    if (touchDragIdx === null) return;
-    const touch = e.touches[0];
-    const el = document.elementFromPoint(touch.clientX, touch.clientY);
-    const row = el ? el.closest('.wo-logged-set') : null;
-    list.querySelectorAll('.drag-over').forEach(x => x.classList.remove('drag-over'));
-    if (row) { row.classList.add('drag-over'); touchTarget = row; }
-  }, { passive: true });
-  list.addEventListener('touchend', () => {
-    if (touchDragIdx !== null && touchTarget) {
-      const dropIdx = parseInt(touchTarget.dataset.idx);
-      if (touchDragIdx !== dropIdx) {
-        const wo = getWo();
-        const sets = wo.queue[wo.currentIdx].sets;
-        const [moved] = sets.splice(touchDragIdx, 1);
-        sets.splice(dropIdx, 0, moved);
-        saveWorkoutProgress();
-        renderWorkout();
-      }
-    }
-    touchDragIdx = null;
-    touchTarget = null;
-    list.querySelectorAll('.dragging,.drag-over').forEach(x => { x.classList.remove('dragging'); x.classList.remove('drag-over'); });
-  });
 }
 
 function initSwipeGesture() {
@@ -1705,23 +1624,20 @@ function renderPrevExercises() {
       let wn = 0;
       ex.sets.forEach((s, si) => {
         const numLabel = s.warmup ? 'W' : String(++wn);
+        const numClass = s.warmup ? 'wo-set-num warmup' : 'wo-set-num';
         if (editing) {
           const wVal = displayWeight(s.weight);
           html += `<div class="wo-logged-set">
-            <span class="wo-drag-handle" style="visibility:hidden">⠿</span>
-            <span class="wo-set-num">${numLabel}</span>
+            <span class="${numClass}">${numLabel}</span>
             <input type="number" class="wo-edit-input" value="${wVal}" inputmode="decimal" onchange="editPrevSet(${i},${si},'weight',this.value)" style="width:60px;background:var(--s2);border:1px solid var(--border2);border-radius:var(--radius);color:var(--text);font-size:12px;padding:4px 6px;text-align:center">
             <input type="number" class="wo-edit-input" value="${s.reps}" inputmode="numeric" onchange="editPrevSet(${i},${si},'reps',this.value)" style="width:50px;background:var(--s2);border:1px solid var(--border2);border-radius:var(--radius);color:var(--text);font-size:12px;padding:4px 6px;text-align:center">
-            ${s.warmup ? '<span class="wo-warmup-tag">W</span>' : '<span></span>'}
             <button class="wo-del-set" onclick="deletePrevSet(${i},${si})" aria-label="Delete">✕</button>
           </div>`;
         } else {
           html += `<div class="wo-logged-set">
-            <span class="wo-drag-handle" style="visibility:hidden">⠿</span>
-            <span class="wo-set-num">${numLabel}</span>
+            <span class="${numClass}">${numLabel}</span>
             <span class="wo-set-detail">${displayWeight(s.weight)}${currentUnit}</span>
             <span class="wo-set-detail">${s.reps} reps</span>
-            ${s.warmup ? '<span class="wo-warmup-tag">W</span>' : '<span></span>'}
             <span></span>
           </div>`;
         }
