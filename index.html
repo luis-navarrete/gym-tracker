@@ -587,6 +587,32 @@ canvas#bodyChart { width:100% !important; }
 .body-empty { padding:32px 0; text-align:center; color:var(--dim); font-size:13px; }
 .body-stats-row { display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; margin-bottom:16px; }
 
+/* ── PICTURES LOG ── */
+.pics-section { padding:0 16px; }
+.pics-upload-row { display:flex; gap:8px; margin-bottom:16px; align-items:center; }
+.pics-upload-btn {
+  flex:1; background:var(--s2); border:1px solid var(--border2); border-radius:var(--radius);
+  color:var(--muted); font-family:var(--font); font-size:13px; font-weight:600;
+  padding:12px; cursor:pointer; text-align:center; transition:all 0.15s;
+}
+.pics-upload-btn:hover { border-color:var(--accent); color:var(--accent); }
+.pics-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:16px; }
+.pics-card {
+  background:var(--s1); border:1px solid var(--border); border-radius:var(--radius);
+  overflow:hidden; position:relative;
+}
+.pics-card img { width:100%; display:block; aspect-ratio:3/4; object-fit:cover; }
+.pics-card-date {
+  padding:6px 8px; font-size:10px; color:var(--muted); text-align:center;
+}
+.pics-card-del {
+  position:absolute; top:4px; right:4px; background:rgba(0,0,0,0.6); border:none;
+  color:var(--muted); cursor:pointer; font-size:14px; width:24px; height:24px;
+  border-radius:50%; display:flex; align-items:center; justify-content:center;
+}
+.pics-card-del:hover { color:var(--red); }
+.pics-empty { padding:32px 0; text-align:center; color:var(--dim); font-size:13px; }
+
 /* ── SETTINGS PAGE ── */
 .settings-header { padding:20px 16px 12px; }
 .settings-title { font-size:22px; font-weight:900; letter-spacing:-0.3px; }
@@ -748,6 +774,7 @@ canvas#bodyChart { width:100% !important; }
       <div class="progress-tabs">
         <button class="progress-tab active" id="ptab-body" onclick="showProgressTab('body')">Body</button>
         <button class="progress-tab" id="ptab-lifts" onclick="showProgressTab('lifts')">Lifts</button>
+        <button class="progress-tab" id="ptab-pics" onclick="showProgressTab('pics')" style="display:none">Pictures</button>
       </div>
 
       <!-- BODY TAB -->
@@ -783,6 +810,18 @@ canvas#bodyChart { width:100% !important; }
           <canvas id="progressChart" height="160" role="img" aria-label="Weight progression chart"></canvas>
         </div>
         <div class="progress-empty" id="progress-empty">No data logged yet for this exercise.</div>
+      </div>
+
+      <!-- PICTURES TAB -->
+      <div id="progress-pics" style="display:none">
+        <div class="pics-section">
+          <div class="pics-upload-row">
+            <button class="pics-upload-btn" onclick="document.getElementById('pics-input').click()">Take / Upload Photo</button>
+          </div>
+          <input type="file" id="pics-input" accept="image/*" capture="environment" style="display:none" onchange="handlePicUpload(event)">
+          <div id="pics-grid" class="pics-grid"></div>
+          <div class="pics-empty" id="pics-empty">No progress pictures yet. Take your first one above.</div>
+        </div>
       </div>
     </section>
 
@@ -1102,7 +1141,7 @@ function refreshCurrentPage() {
   if (currentPage === 'today') renderToday();
   if (currentPage === 'routine') renderRoutine();
   if (currentPage === 'history') renderHistory();
-  if (currentPage === 'progress') showProgressTab(progressTab);
+  if (currentPage === 'progress') { updatePicsTabVisibility(); showProgressTab(progressTab); }
   if (currentPage === 'settings') renderRoutineEditor();
 }
 
@@ -2210,10 +2249,20 @@ function showProgressTab(tab) {
   progressTab = tab;
   document.getElementById('ptab-body').classList.toggle('active', tab === 'body');
   document.getElementById('ptab-lifts').classList.toggle('active', tab === 'lifts');
+  document.getElementById('ptab-pics').classList.toggle('active', tab === 'pics');
   document.getElementById('progress-body').style.display = tab === 'body' ? '' : 'none';
   document.getElementById('progress-lifts').style.display = tab === 'lifts' ? '' : 'none';
+  document.getElementById('progress-pics').style.display = tab === 'pics' ? '' : 'none';
   if (tab === 'body') renderBodyTracking();
   if (tab === 'lifts') { populateProgressPicker(); renderProgress(); }
+  if (tab === 'pics') renderPictures();
+}
+
+function updatePicsTabVisibility() {
+  const day = new Date().getDay();
+  const isWeekend = day === 0 || day === 6;
+  document.getElementById('ptab-pics').style.display = isWeekend ? '' : 'none';
+  if (!isWeekend && progressTab === 'pics') showProgressTab('body');
 }
 
 // ─────────────────────────────────────────
@@ -2377,6 +2426,73 @@ function drawBodyChart(points) {
       ctx.fillText(formatDateShort(p.date), toX(i), H - 6);
     }
   });
+}
+
+// ─────────────────────────────────────────
+// PROGRESS PAGE — PICTURES
+// ─────────────────────────────────────────
+const PICS_STORAGE_KEY = 'gymtracker_pics';
+
+function loadPicsData() {
+  try { return JSON.parse(localStorage.getItem(PICS_STORAGE_KEY)) || { luis: [], her: [] }; }
+  catch { return { luis: [], her: [] }; }
+}
+
+function savePicsData(data) {
+  localStorage.setItem(PICS_STORAGE_KEY, JSON.stringify(data));
+}
+
+function handlePicUpload(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(ev) {
+    const img = new Image();
+    img.onload = function() {
+      const canvas = document.createElement('canvas');
+      const maxW = 400;
+      const scale = Math.min(maxW / img.width, 1);
+      canvas.width = img.width * scale;
+      canvas.height = img.height * scale;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
+      const data = loadPicsData();
+      if (!data[currentProfile]) data[currentProfile] = [];
+      data[currentProfile].unshift({ date: toDateStr(new Date()), src: dataUrl });
+      savePicsData(data);
+      renderPictures();
+    };
+    img.src = ev.target.result;
+  };
+  reader.readAsDataURL(file);
+  e.target.value = '';
+}
+
+function deletePic(idx) {
+  const data = loadPicsData();
+  if (!data[currentProfile]) return;
+  data[currentProfile].splice(idx, 1);
+  savePicsData(data);
+  renderPictures();
+}
+
+function renderPictures() {
+  const data = loadPicsData();
+  const pics = data[currentProfile] || [];
+  const grid = document.getElementById('pics-grid');
+  const empty = document.getElementById('pics-empty');
+  if (!pics.length) {
+    grid.innerHTML = '';
+    empty.style.display = '';
+    return;
+  }
+  empty.style.display = 'none';
+  grid.innerHTML = pics.map((p, i) => `<div class="pics-card">
+    <img src="${p.src}" alt="Progress photo" loading="lazy">
+    <div class="pics-card-date">${p.date}</div>
+    <button class="pics-card-del" onclick="deletePic(${i})" aria-label="Delete">✕</button>
+  </div>`).join('');
 }
 
 // ─────────────────────────────────────────
@@ -2793,6 +2909,7 @@ if ('serviceWorker' in navigator) {
 // ─────────────────────────────────────────
 renderToday();
 initWorkoutSwipe();
+updatePicsTabVisibility();
 </script>
 </body>
 </html>
