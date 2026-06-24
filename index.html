@@ -1651,6 +1651,13 @@ function renderPrevExercises() {
       });
       html += '</div>';
     }
+    if (editing) {
+      const hasWarmup = ex.sets.length > 0 && ex.sets[0].warmup;
+      html += `<div style="display:flex;gap:6px;padding:8px 14px">
+        <button class="wo-action-btn" style="flex:0;padding:5px 10px;font-size:10px" onclick="addPrevSet(${i})">+ Add set</button>
+        <button class="wo-warmup-toggle${hasWarmup ? ' active' : ''}" style="font-size:9px;padding:5px 8px" onclick="togglePrevWarmup(${i})">W</button>
+      </div>`;
+    }
     html += '</div>';
   }
   html += '</div>';
@@ -1708,6 +1715,28 @@ function deletePrevSet(exIdx, setIdx) {
   const wo = getWo();
   if (!wo) return;
   wo.queue[exIdx].sets.splice(setIdx, 1);
+  saveWorkoutProgress();
+  renderPrevExercises();
+}
+
+function addPrevSet(exIdx) {
+  const wo = getWo();
+  if (!wo) return;
+  const ex = wo.queue[exIdx];
+  const lastSet = ex.sets.length ? ex.sets[ex.sets.length - 1] : null;
+  const weight = lastSet ? lastSet.weight : '0';
+  const reps = lastSet ? lastSet.reps : '0';
+  ex.sets.push({ weight, reps, warmup: false });
+  saveWorkoutProgress();
+  renderPrevExercises();
+}
+
+function togglePrevWarmup(exIdx) {
+  const wo = getWo();
+  if (!wo) return;
+  const ex = wo.queue[exIdx];
+  if (!ex.sets.length) return;
+  ex.sets[0].warmup = !ex.sets[0].warmup;
   saveWorkoutProgress();
   renderPrevExercises();
 }
