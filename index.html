@@ -43,11 +43,11 @@
 .profile-her { --accent: var(--her); --accent-dim: var(--her-dim); }
 
 * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color: transparent; }
-html, body { height:100%; background:var(--bg); color:var(--text); font-family:var(--font); font-size:14px; overscroll-behavior:none; }
+html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--text); font-family:var(--font); font-size:14px; overscroll-behavior:none; }
 
 /* ── LAYOUT ── */
 #app {
-  display:flex; flex-direction:column; height:100vh;
+  display:flex; flex-direction:column; height:100vh; height:100dvh;
   max-width:480px; margin:0 auto; background:var(--bg);
   position:relative; overflow:hidden;
 }
