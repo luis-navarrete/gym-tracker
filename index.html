@@ -492,6 +492,45 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
 .hs-set { font-size:12px; color:var(--text); padding:2px 0; display:flex; gap:8px; align-items:baseline; }
 .hs-set-num { color:var(--dim); font-size:11px; width:28px; }
 .hs-note { font-size:11px; color:var(--dim); font-style:italic; }
+.cal-log-routine-wrap { padding:12px 16px; }
+.cal-log-routine-btn {
+  width:100%; background:var(--accent-dim); border:1px solid var(--accent); color:var(--accent);
+  border-radius:var(--radius); font-family:var(--font); font-size:13px; font-weight:600;
+  padding:10px; cursor:pointer; transition:all 0.15s;
+}
+.cal-log-routine-btn:hover { opacity:0.88; }
+.cal-log-picker { padding:8px 16px; }
+.cal-log-picker select {
+  width:100%; background:var(--s2); border:1px solid var(--border2); border-radius:var(--radius);
+  color:var(--text); font-family:var(--font); font-size:13px; padding:10px 12px; margin-bottom:8px;
+}
+.cal-log-ex {
+  padding:10px 14px; border-top:1px solid var(--border);
+}
+.cal-log-ex-name { font-size:12px; font-weight:600; color:var(--muted); margin-bottom:6px; }
+.cal-log-ex-target { font-size:10px; color:var(--dim); margin-bottom:6px; }
+.cal-log-set-row {
+  display:flex; gap:6px; align-items:center; margin-bottom:4px; font-size:12px;
+}
+.cal-log-set-row input {
+  width:60px; background:var(--s2); border:1px solid var(--border2); border-radius:var(--radius);
+  color:var(--text); font-family:var(--font); font-size:12px; padding:6px; text-align:center;
+}
+.cal-log-set-row input:focus { outline:none; border-color:var(--accent); }
+.cal-log-set-num { color:var(--dim); font-size:11px; width:24px; }
+.cal-log-add-set {
+  background:none; border:none; color:var(--accent); cursor:pointer; font-size:11px;
+  font-family:var(--font); font-weight:600; padding:4px 0;
+}
+.cal-log-actions { padding:10px 16px; display:flex; gap:8px; }
+.cal-log-save {
+  flex:1; background:var(--accent); color:var(--bg); border:none; border-radius:var(--radius);
+  font-family:var(--font); font-size:13px; font-weight:700; padding:10px; cursor:pointer;
+}
+.cal-log-cancel {
+  background:var(--s3); border:1px solid var(--border2); color:var(--muted); border-radius:var(--radius);
+  font-family:var(--font); font-size:13px; font-weight:600; padding:10px 16px; cursor:pointer;
+}
 .del-session-btn {
   background:none; border:none; color:var(--dim); cursor:pointer; font-size:12px;
   padding:2px 6px; border-radius:var(--radius); transition:color 0.15s, background 0.15s;
@@ -586,6 +625,32 @@ canvas#bodyChart { width:100% !important; }
 .body-log-del:hover { color:#e06060; }
 .body-empty { padding:32px 0; text-align:center; color:var(--dim); font-size:13px; }
 .body-stats-row { display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; margin-bottom:16px; }
+
+/* ── PICTURES LOG ── */
+.pics-section { padding:0 16px; }
+.pics-upload-row { display:flex; gap:8px; margin-bottom:16px; align-items:center; }
+.pics-upload-btn {
+  flex:1; background:var(--s2); border:1px solid var(--border2); border-radius:var(--radius);
+  color:var(--muted); font-family:var(--font); font-size:13px; font-weight:600;
+  padding:12px; cursor:pointer; text-align:center; transition:all 0.15s;
+}
+.pics-upload-btn:hover { border-color:var(--accent); color:var(--accent); }
+.pics-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:16px; }
+.pics-card {
+  background:var(--s1); border:1px solid var(--border); border-radius:var(--radius);
+  overflow:hidden; position:relative;
+}
+.pics-card img { width:100%; display:block; aspect-ratio:3/4; object-fit:cover; }
+.pics-card-date {
+  padding:6px 8px; font-size:10px; color:var(--muted); text-align:center;
+}
+.pics-card-del {
+  position:absolute; top:4px; right:4px; background:rgba(0,0,0,0.6); border:none;
+  color:var(--muted); cursor:pointer; font-size:14px; width:24px; height:24px;
+  border-radius:50%; display:flex; align-items:center; justify-content:center;
+}
+.pics-card-del:hover { color:var(--red); }
+.pics-empty { padding:32px 0; text-align:center; color:var(--dim); font-size:13px; }
 
 /* ── SETTINGS PAGE ── */
 .settings-header { padding:20px 16px 12px; }
@@ -748,6 +813,7 @@ canvas#bodyChart { width:100% !important; }
       <div class="progress-tabs">
         <button class="progress-tab active" id="ptab-body" onclick="showProgressTab('body')">Body</button>
         <button class="progress-tab" id="ptab-lifts" onclick="showProgressTab('lifts')">Lifts</button>
+        <button class="progress-tab" id="ptab-pics" onclick="showProgressTab('pics')" style="display:none">Pictures</button>
       </div>
 
       <!-- BODY TAB -->
@@ -784,6 +850,18 @@ canvas#bodyChart { width:100% !important; }
         </div>
         <div class="progress-empty" id="progress-empty">No data logged yet for this exercise.</div>
       </div>
+
+      <!-- PICTURES TAB -->
+      <div id="progress-pics" style="display:none">
+        <div class="pics-section">
+          <div class="pics-upload-row">
+            <button class="pics-upload-btn" onclick="document.getElementById('pics-input').click()">Take / Upload Photo</button>
+          </div>
+          <input type="file" id="pics-input" accept="image/*" capture="environment" style="display:none" onchange="handlePicUpload(event)">
+          <div id="pics-grid" class="pics-grid"></div>
+          <div class="pics-empty" id="pics-empty">No progress pictures yet. Take your first one above.</div>
+        </div>
+      </div>
     </section>
 
     <!-- SETTINGS -->
@@ -792,6 +870,9 @@ canvas#bodyChart { width:100% !important; }
         <div class="settings-title">Settings</div>
       </div>
       <div class="settings-section">
+        <div class="settings-section-title">Routines</div>
+        <div id="routine-editor"></div>
+
         <div class="settings-section-title">Data Management</div>
         <div class="settings-item" onclick="exportData()" role="button" tabindex="0" aria-label="Export data">
           <div class="settings-item-left">
@@ -812,9 +893,6 @@ canvas#bodyChart { width:100% !important; }
           </div>
         </div>
         <input type="file" id="import-file" class="file-input-hidden" accept=".json" onchange="importData(event)">
-
-        <div class="settings-section-title">Routines</div>
-        <div id="routine-editor"></div>
 
         <div class="settings-section-title">Danger Zone</div>
         <div class="settings-item" onclick="confirmClearData()" role="button" tabindex="0" aria-label="Clear all data">
@@ -1102,7 +1180,7 @@ function refreshCurrentPage() {
   if (currentPage === 'today') renderToday();
   if (currentPage === 'routine') renderRoutine();
   if (currentPage === 'history') renderHistory();
-  if (currentPage === 'progress') showProgressTab(progressTab);
+  if (currentPage === 'progress') { updatePicsTabVisibility(); showProgressTab(progressTab); }
   if (currentPage === 'settings') renderRoutineEditor();
 }
 
@@ -1654,7 +1732,7 @@ function renderPrevExercises() {
     if (editing) {
       const hasWarmup = ex.sets.length > 0 && ex.sets[0].warmup;
       html += `<div style="display:flex;gap:6px;padding:8px 14px">
-        <button class="wo-action-btn" style="flex:0;padding:5px 10px;font-size:10px" onclick="addPrevSet(${i})">+ Add set</button>
+        <button class="wo-action-btn" style="flex:1;padding:5px 10px;font-size:10px" onclick="addPrevSet(${i})">+ Add set</button>
         <button class="wo-warmup-toggle${hasWarmup ? ' active' : ''}" style="font-size:9px;padding:5px 8px" onclick="togglePrevWarmup(${i})">W</button>
       </div>`;
     }
@@ -2078,9 +2156,7 @@ function renderCalendar(data) {
       if (hasHer) dots += '<div class="cal-dot dot-her"></div>';
       dots += '</div>';
     }
-    const click = hasAny ? `onclick="selectCalDay('${ds}')"` : '';
-
-    html += `<div class="${cls}" ${click}>${d}${dots}</div>`;
+    html += `<div class="${cls}" onclick="selectCalDay('${ds}')">${d}${dots}</div>`;
   }
 
   html += '</div></div>';
@@ -2095,7 +2171,7 @@ function renderCalendarDetail(data) {
     if (!allSessions.length) {
       container.innerHTML = '<div class="history-empty">No sessions logged yet. Start today!</div>';
     } else {
-      container.innerHTML = '<div class="history-empty" style="padding:24px 16px">Tap a highlighted day to see details.</div>';
+      container.innerHTML = '<div class="history-empty" style="padding:24px 16px">Tap a day to see details or log a routine.</div>';
     }
     return;
   }
@@ -2139,9 +2215,19 @@ function renderCalendarDetail(data) {
     });
   });
 
-  if (!html) { container.innerHTML = ''; return; }
+  const hasDataForProfile = (data[currentProfile] || []).some(s => s.date === calSelectedDate);
+  if (!hasDataForProfile && !calLogMode) {
+    html += `<div class="cal-log-routine-wrap">
+      <button class="cal-log-routine-btn" onclick="startCalLogRoutine()">Log Routine</button>
+    </div>`;
+  }
 
-  container.innerHTML = html;
+  if (calLogMode && calLogMode.date === calSelectedDate) {
+    html += renderCalLogForm();
+  }
+
+  if (!html) { container.innerHTML = '<div class="history-empty" style="padding:24px 16px">Tap a day to see details or log a routine.</div>'; }
+  else { container.innerHTML = html; }
 
   container.querySelectorAll('.del-session-btn').forEach(btn => {
     btn.addEventListener('click', function(e) {
@@ -2149,6 +2235,147 @@ function renderCalendarDetail(data) {
       deleteSession(this.dataset.profile, this.dataset.date, parseInt(this.dataset.dayidx));
     });
   });
+  container.querySelectorAll('.cal-log-set-row input').forEach(inp => {
+    inp.addEventListener('focus', function() { this.select(); });
+  });
+}
+
+let calLogMode = null;
+
+function startCalLogRoutine() {
+  const routine = ROUTINES[currentProfile];
+  if (!routine || !routine.length) { showToast('No routines configured'); return; }
+  calLogMode = {
+    date: calSelectedDate,
+    dayIdx: 0,
+    sets: {}
+  };
+  initCalLogSets(0);
+  const data = loadData();
+  renderCalendarDetail(data);
+}
+
+function initCalLogSets(dayIdx) {
+  const routine = ROUTINES[currentProfile];
+  const day = routine[dayIdx];
+  calLogMode.dayIdx = dayIdx;
+  calLogMode.sets = {};
+  day.exercises.forEach((ex, ei) => {
+    const targetMatch = ex.target.match(/^(\d+)/);
+    const numSets = targetMatch ? parseInt(targetMatch[1]) : 3;
+    const unit = getUnitForExercise(ex.name);
+    const data = loadData();
+    const lastW = getLastWeight(data, currentProfile, ex.name);
+    const defW = lastW ? (unit === 'lb' ? String(kgToLb(parseFloat(lastW))) : lastW) : '';
+    calLogMode.sets[ei] = [];
+    for (let s = 0; s < numSets; s++) {
+      calLogMode.sets[ei].push({ weight: defW, reps: '' });
+    }
+  });
+}
+
+function renderCalLogForm() {
+  const routine = ROUTINES[currentProfile];
+  if (!routine || !routine.length) return '';
+  const day = routine[calLogMode.dayIdx];
+
+  let html = '<div class="cal-detail">';
+  html += `<div class="cal-log-picker">
+    <select onchange="changeCalLogDay(this.value)">`;
+  routine.forEach((r, i) => {
+    html += `<option value="${i}" ${i === calLogMode.dayIdx ? 'selected' : ''}>${r.label} — ${r.day}</option>`;
+  });
+  html += '</select></div>';
+
+  day.exercises.forEach((ex, ei) => {
+    const unit = getUnitForExercise(ex.name);
+    const sets = calLogMode.sets[ei] || [];
+    html += `<div class="cal-log-ex">
+      <div class="cal-log-ex-name">${escapeHtml(ex.name)}</div>
+      <div class="cal-log-ex-target">${escapeHtml(ex.target)}</div>`;
+    sets.forEach((s, si) => {
+      html += `<div class="cal-log-set-row">
+        <span class="cal-log-set-num">${si + 1}</span>
+        <input type="number" value="${s.weight}" inputmode="decimal" placeholder="${unit}" onchange="updateCalLogSet(${ei},${si},'weight',this.value)">
+        <span style="color:var(--dim);font-size:11px">×</span>
+        <input type="number" value="${s.reps}" inputmode="numeric" placeholder="reps" onchange="updateCalLogSet(${ei},${si},'reps',this.value)">
+      </div>`;
+    });
+    html += `<button class="cal-log-add-set" onclick="addCalLogSet(${ei})">+ Add set</button>`;
+    html += '</div>';
+  });
+
+  html += `<div class="cal-log-actions">
+    <button class="cal-log-cancel" onclick="cancelCalLog()">Cancel</button>
+    <button class="cal-log-save" onclick="saveCalLog()">Save</button>
+  </div></div>`;
+  return html;
+}
+
+function changeCalLogDay(idx) {
+  initCalLogSets(parseInt(idx));
+  const data = loadData();
+  renderCalendarDetail(data);
+}
+
+function updateCalLogSet(exIdx, setIdx, field, value) {
+  if (!calLogMode) return;
+  calLogMode.sets[exIdx][setIdx][field] = value;
+}
+
+function addCalLogSet(exIdx) {
+  if (!calLogMode) return;
+  const sets = calLogMode.sets[exIdx];
+  const last = sets.length ? sets[sets.length - 1] : { weight: '', reps: '' };
+  sets.push({ weight: last.weight, reps: last.reps });
+  const data = loadData();
+  renderCalendarDetail(data);
+}
+
+function cancelCalLog() {
+  calLogMode = null;
+  const data = loadData();
+  renderCalendarDetail(data);
+}
+
+function saveCalLog() {
+  if (!calLogMode) return;
+  const routine = ROUTINES[currentProfile];
+  const day = routine[calLogMode.dayIdx];
+  const data = loadData();
+  if (!data[currentProfile]) data[currentProfile] = [];
+
+  const exercises = [];
+  day.exercises.forEach((ex, ei) => {
+    const sets = (calLogMode.sets[ei] || []).filter(s => s.weight || s.reps);
+    if (!sets.length) return;
+    const unit = getUnitForExercise(ex.name);
+    exercises.push({
+      exIdx: ei,
+      name: ex.name,
+      sets: sets.map(s => ({
+        weight: unit === 'lb' ? String(lbToKg(parseFloat(s.weight) || 0)) : (s.weight || '0'),
+        reps: s.reps || '0',
+        note: ''
+      }))
+    });
+  });
+
+  if (!exercises.length) { showToast('No sets logged'); return; }
+
+  const session = {
+    date: calLogMode.date,
+    dayIdx: calLogMode.dayIdx,
+    dayName: day.label,
+    exercises
+  };
+  data[currentProfile].unshift(session);
+  saveData(data);
+
+  calLogMode = null;
+  renderCalendar(data);
+  renderCalendarDetail(data);
+  showToast('Routine logged');
 }
 
 function renderWeeklyStats(data) {
@@ -2210,10 +2437,20 @@ function showProgressTab(tab) {
   progressTab = tab;
   document.getElementById('ptab-body').classList.toggle('active', tab === 'body');
   document.getElementById('ptab-lifts').classList.toggle('active', tab === 'lifts');
+  document.getElementById('ptab-pics').classList.toggle('active', tab === 'pics');
   document.getElementById('progress-body').style.display = tab === 'body' ? '' : 'none';
   document.getElementById('progress-lifts').style.display = tab === 'lifts' ? '' : 'none';
+  document.getElementById('progress-pics').style.display = tab === 'pics' ? '' : 'none';
   if (tab === 'body') renderBodyTracking();
   if (tab === 'lifts') { populateProgressPicker(); renderProgress(); }
+  if (tab === 'pics') renderPictures();
+}
+
+function updatePicsTabVisibility() {
+  const day = new Date().getDay();
+  const isWeekend = day === 0 || day === 6;
+  document.getElementById('ptab-pics').style.display = isWeekend ? '' : 'none';
+  if (!isWeekend && progressTab === 'pics') showProgressTab('body');
 }
 
 // ─────────────────────────────────────────
@@ -2377,6 +2614,73 @@ function drawBodyChart(points) {
       ctx.fillText(formatDateShort(p.date), toX(i), H - 6);
     }
   });
+}
+
+// ─────────────────────────────────────────
+// PROGRESS PAGE — PICTURES
+// ─────────────────────────────────────────
+const PICS_STORAGE_KEY = 'gymtracker_pics';
+
+function loadPicsData() {
+  try { return JSON.parse(localStorage.getItem(PICS_STORAGE_KEY)) || { luis: [], her: [] }; }
+  catch { return { luis: [], her: [] }; }
+}
+
+function savePicsData(data) {
+  localStorage.setItem(PICS_STORAGE_KEY, JSON.stringify(data));
+}
+
+function handlePicUpload(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(ev) {
+    const img = new Image();
+    img.onload = function() {
+      const canvas = document.createElement('canvas');
+      const maxW = 400;
+      const scale = Math.min(maxW / img.width, 1);
+      canvas.width = img.width * scale;
+      canvas.height = img.height * scale;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
+      const data = loadPicsData();
+      if (!data[currentProfile]) data[currentProfile] = [];
+      data[currentProfile].unshift({ date: toDateStr(new Date()), src: dataUrl });
+      savePicsData(data);
+      renderPictures();
+    };
+    img.src = ev.target.result;
+  };
+  reader.readAsDataURL(file);
+  e.target.value = '';
+}
+
+function deletePic(idx) {
+  const data = loadPicsData();
+  if (!data[currentProfile]) return;
+  data[currentProfile].splice(idx, 1);
+  savePicsData(data);
+  renderPictures();
+}
+
+function renderPictures() {
+  const data = loadPicsData();
+  const pics = data[currentProfile] || [];
+  const grid = document.getElementById('pics-grid');
+  const empty = document.getElementById('pics-empty');
+  if (!pics.length) {
+    grid.innerHTML = '';
+    empty.style.display = '';
+    return;
+  }
+  empty.style.display = 'none';
+  grid.innerHTML = pics.map((p, i) => `<div class="pics-card">
+    <img src="${p.src}" alt="Progress photo" loading="lazy">
+    <div class="pics-card-date">${p.date}</div>
+    <button class="pics-card-del" onclick="deletePic(${i})" aria-label="Delete">✕</button>
+  </div>`).join('');
 }
 
 // ─────────────────────────────────────────
@@ -2793,6 +3097,7 @@ if ('serviceWorker' in navigator) {
 // ─────────────────────────────────────────
 renderToday();
 initWorkoutSwipe();
+updatePicsTabVisibility();
 </script>
 </body>
 </html>
