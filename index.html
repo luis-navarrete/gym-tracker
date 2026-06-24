@@ -1362,6 +1362,7 @@ function renderWorkout() {
   }
 
   let html = woTimerBarHtml(`${doneCount}/${wo.queue.length} exercises`);
+  html += '<div class="wo-content-body">';
 
   if (wo.postponed.length) {
     html += `<div class="wo-postponed"><div class="wo-postponed-title">Postponed (${wo.postponed.length})</div>`;
@@ -1458,6 +1459,7 @@ function renderWorkout() {
     <button class="wo-action-btn postpone" onclick="postponeExercise()">Postpone</button>
     <button class="wo-action-btn skip" onclick="skipExercise()">Skip</button>
   </div></div>`;
+  html += '</div>';
 
   container.innerHTML = html;
   updateWorkoutTimer();
@@ -1571,12 +1573,16 @@ function initWorkoutSwipe() {
 function renderWorkoutAnimated(animClass) {
   const container = document.getElementById('today-content');
   renderWorkout();
-  if (animClass && container.firstElementChild) {
-    const wrapper = container.querySelector('.wo-exercise-card, .wo-nav-preview, .wo-prev-exercise-card');
-    if (wrapper) {
-      const parent = wrapper.parentElement || container;
-      parent.classList.add(animClass);
-      parent.addEventListener('animationend', () => parent.classList.remove(animClass), { once: true });
+  if (animClass) {
+    const body = container.querySelector('.wo-content-body');
+    if (body) {
+      body.classList.add(animClass);
+      body.addEventListener('animationend', () => body.classList.remove(animClass), { once: true });
+    }
+    const label = container.querySelector('.wo-progress-label');
+    if (label) {
+      label.classList.add(animClass);
+      label.addEventListener('animationend', () => label.classList.remove(animClass), { once: true });
     }
   }
 }
@@ -1605,6 +1611,7 @@ function renderPrevExercises() {
   const wo = getWo();
 
   let html = woTimerBarHtml('Viewing previous — swipe up to return');
+  html += '<div class="wo-content-body">';
 
   for (let i = wo.viewIdx; i >= 0; i--) {
     const ex = wo.queue[i];
@@ -1644,8 +1651,16 @@ function renderPrevExercises() {
       });
       html += '</div>';
     }
+    if (editing) {
+      const hasWarmup = ex.sets.length > 0 && ex.sets[0].warmup;
+      html += `<div style="display:flex;gap:6px;padding:8px 14px">
+        <button class="wo-action-btn" style="flex:0;padding:5px 10px;font-size:10px" onclick="addPrevSet(${i})">+ Add set</button>
+        <button class="wo-warmup-toggle${hasWarmup ? ' active' : ''}" style="font-size:9px;padding:5px 8px" onclick="togglePrevWarmup(${i})">W</button>
+      </div>`;
+    }
     html += '</div>';
   }
+  html += '</div>';
 
   container.innerHTML = html;
   updateWorkoutTimer();
@@ -1660,6 +1675,7 @@ function renderNextExercises() {
   const wo = getWo();
 
   let html = woTimerBarHtml('Coming up — swipe down to return');
+  html += '<div class="wo-content-body">';
 
   html += '<div class="wo-nav-preview"><div class="wo-nav-preview-head">Next exercises</div>';
   for (let i = wo.currentIdx + 1; i < wo.queue.length; i++) {
@@ -1670,7 +1686,7 @@ function renderNextExercises() {
       <div class="wo-nav-preview-target">${escapeHtml(ex.target)}</div>
     </div>`;
   }
-  html += '</div>';
+  html += '</div></div>';
 
   container.innerHTML = html;
   updateWorkoutTimer();
@@ -1699,6 +1715,28 @@ function deletePrevSet(exIdx, setIdx) {
   const wo = getWo();
   if (!wo) return;
   wo.queue[exIdx].sets.splice(setIdx, 1);
+  saveWorkoutProgress();
+  renderPrevExercises();
+}
+
+function addPrevSet(exIdx) {
+  const wo = getWo();
+  if (!wo) return;
+  const ex = wo.queue[exIdx];
+  const lastSet = ex.sets.length ? ex.sets[ex.sets.length - 1] : null;
+  const weight = lastSet ? lastSet.weight : '0';
+  const reps = lastSet ? lastSet.reps : '0';
+  ex.sets.push({ weight, reps, warmup: false });
+  saveWorkoutProgress();
+  renderPrevExercises();
+}
+
+function togglePrevWarmup(exIdx) {
+  const wo = getWo();
+  if (!wo) return;
+  const ex = wo.queue[exIdx];
+  if (!ex.sets.length) return;
+  ex.sets[0].warmup = !ex.sets[0].warmup;
   saveWorkoutProgress();
   renderPrevExercises();
 }
