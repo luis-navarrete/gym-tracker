@@ -329,10 +329,14 @@ html, body { height:100%; background:var(--bg); color:var(--text); font-family:v
 .cal-day.has-session:hover { background:var(--s2); }
 .cal-day.selected { background:var(--accent-dim); color:var(--accent); font-weight:700; }
 .cal-day.today { border:1px solid var(--border2); }
+.cal-dots {
+  position:absolute; bottom:3px; display:flex; gap:2px;
+}
 .cal-dot {
   width:5px; height:5px; border-radius:50%;
-  background:var(--accent); position:absolute; bottom:3px;
 }
+.cal-dot.dot-luis { background:#f5c842; }
+.cal-dot.dot-her { background:#f48fb1; }
 .cal-day.rest-day { color:var(--dim); opacity:0.5; }
 
 /* selected day detail */
@@ -884,8 +888,10 @@ const UNIT_STORAGE_KEY = 'gymtracker_units';
 const BODY_STORAGE_KEY = 'gymtracker_body';
 let progressTab = 'body';
 
-// workout mode state
-let wo = null; // null = not active, object = active workout
+// workout mode state — per-profile so both can run simultaneously
+let woState = { luis: null, her: null };
+function getWo() { return woState[currentProfile]; }
+function setWo(v) { woState[currentProfile] = v; }
 
 function loadUnitPrefs() {
   try { return JSON.parse(localStorage.getItem(UNIT_STORAGE_KEY)) || {}; } catch { return {}; }
@@ -914,7 +920,6 @@ function saveData(data) {
 // ─────────────────────────────────────────
 function switchProfile(p) {
   if (p === currentProfile) return;
-  if (wo) { showToast('Finish or stop workout first'); return; }
   currentProfile = p;
   calSelectedDate = null;
   document.getElementById('app').className = p === 'her' ? 'profile-her' : '';
@@ -1024,7 +1029,7 @@ function renderToday() {
 
   renderStreak();
 
-  if (wo) { renderWorkout(); return; }
+  if (getWo()) { renderWorkout(); return; }
 
   const dayIdx = getTodayDayIndex();
   const container = document.getElementById('today-content');
@@ -1096,7 +1101,7 @@ function startWorkout() {
   if (dayIdx === -1) return;
   const dayData = ROUTINES[currentProfile][dayIdx];
   const data = loadData();
-  wo = {
+  setWo({
     dayIdx,
     dayName: dayData.day,
     startTime: Date.now(),
@@ -1109,13 +1114,14 @@ function startWorkout() {
     postponed: [],
     currentIdx: 0,
     finished: false
-  };
-  wo.timerInterval = setInterval(updateWorkoutTimer, 1000);
+  });
+  getWo().timerInterval = setInterval(updateWorkoutTimer, 1000);
   renderToday();
 }
 
 function updateWorkoutTimer() {
   const el = document.getElementById('wo-elapsed');
+  const wo = getWo();
   if (!el || !wo) return;
   const sec = Math.floor((Date.now() - wo.startTime) / 1000);
   const m = Math.floor(sec / 60);
@@ -1132,6 +1138,8 @@ function formatDuration(ms) {
 
 function renderWorkout() {
   const container = document.getElementById('today-content');
+  const wo = getWo();
+  if (!wo) return;
 
   if (wo.finished) { renderWorkoutSummary(); return; }
 
@@ -1233,6 +1241,7 @@ function renderWorkout() {
 }
 
 function logWorkoutSet() {
+  const wo = getWo();
   if (!wo) return;
   const cur = wo.queue[wo.currentIdx];
   const wEl = document.getElementById('wo-weight');
@@ -1261,18 +1270,21 @@ function logWorkoutSet() {
 }
 
 function finishExercise() {
+  const wo = getWo();
   if (!wo) return;
   wo.queue[wo.currentIdx].done = true;
   advanceToNext();
 }
 
 function skipExercise() {
+  const wo = getWo();
   if (!wo) return;
   wo.queue[wo.currentIdx].skipped = true;
   advanceToNext();
 }
 
 function postponeExercise() {
+  const wo = getWo();
   if (!wo) return;
   const cur = wo.queue[wo.currentIdx];
   wo.postponed.push(cur);
@@ -1287,6 +1299,7 @@ function postponeExercise() {
 }
 
 function insertPostponed(pIdx) {
+  const wo = getWo();
   if (!wo) return;
   const ex = wo.postponed.splice(pIdx, 1)[0];
   wo.queue.splice(wo.currentIdx, 0, ex);
@@ -1294,6 +1307,7 @@ function insertPostponed(pIdx) {
 }
 
 function advanceToNext() {
+  const wo = getWo();
   wo.currentIdx++;
   if (wo.currentIdx >= wo.queue.length) {
     if (wo.postponed.length) {
@@ -1313,6 +1327,7 @@ function stopWorkout() {
 }
 
 function finishWorkout() {
+  const wo = getWo();
   if (wo.timerInterval) { clearInterval(wo.timerInterval); wo.timerInterval = null; }
   wo.finished = true;
   wo.endTime = Date.now();
@@ -1321,6 +1336,7 @@ function finishWorkout() {
 }
 
 function saveWorkoutProgress() {
+  const wo = getWo();
   if (!wo) return;
   const data = loadData();
   if (!data[currentProfile]) data[currentProfile] = [];
@@ -1361,6 +1377,7 @@ function saveWorkoutProgress() {
 
 function renderWorkoutSummary() {
   const container = document.getElementById('today-content');
+  const wo = getWo();
   const duration = formatDuration(wo.endTime - wo.startTime);
   let totalSets = 0, totalVol = 0;
   const exercisesDone = [];
@@ -1405,7 +1422,7 @@ function renderWorkoutSummary() {
 }
 
 function endWorkout() {
-  wo = null;
+  setWo(null);
   renderToday();
 }
 
@@ -1499,12 +1516,12 @@ function renderCalendar(data) {
 
   document.getElementById('cal-month-label').textContent = `${months[month]} ${year}`;
 
-  const sessions = data[currentProfile] || [];
-  const sessionDates = new Set(sessions.map(s => s.date));
+  const luisDates = new Set((data.luis || []).map(s => s.date));
+  const herDates = new Set((data.her || []).map(s => s.date));
 
   const firstDay = new Date(year, month, 1);
   const lastDay = new Date(year, month + 1, 0);
-  const startDow = (firstDay.getDay() + 6) % 7; // Mon=0
+  const startDow = (firstDay.getDay() + 6) % 7;
   const daysInMonth = lastDay.getDate();
   const todayStr = toDateStr(new Date());
 
@@ -1522,20 +1539,28 @@ function renderCalendar(data) {
     const ds = toDateStr(dateObj);
     const dow = dateObj.getDay();
     const isWeekend = dow === 0 || dow === 6;
-    const hasSession = sessionDates.has(ds);
+    const hasLuis = luisDates.has(ds);
+    const hasHer = herDates.has(ds);
+    const hasAny = hasLuis || hasHer;
     const isToday = ds === todayStr;
     const isSelected = ds === calSelectedDate;
 
     let cls = 'cal-day';
-    if (hasSession) cls += ' has-session';
+    if (hasAny) cls += ' has-session';
     if (isToday) cls += ' today';
     if (isSelected) cls += ' selected';
-    if (isWeekend && !hasSession) cls += ' rest-day';
+    if (isWeekend && !hasAny) cls += ' rest-day';
 
-    const dot = hasSession ? '<div class="cal-dot"></div>' : '';
-    const click = hasSession ? `onclick="selectCalDay('${ds}')"` : '';
+    let dots = '';
+    if (hasAny) {
+      dots = '<div class="cal-dots">';
+      if (hasLuis) dots += '<div class="cal-dot dot-luis"></div>';
+      if (hasHer) dots += '<div class="cal-dot dot-her"></div>';
+      dots += '</div>';
+    }
+    const click = hasAny ? `onclick="selectCalDay('${ds}')"` : '';
 
-    html += `<div class="${cls}" ${click}>${d}${dot}</div>`;
+    html += `<div class="${cls}" ${click}>${d}${dots}</div>`;
   }
 
   html += '</div></div>';
@@ -1546,8 +1571,8 @@ function renderCalendarDetail(data) {
   const container = document.getElementById('cal-detail-wrap');
 
   if (!calSelectedDate) {
-    const sessions = data[currentProfile] || [];
-    if (!sessions.length) {
+    const allSessions = (data.luis || []).concat(data.her || []);
+    if (!allSessions.length) {
       container.innerHTML = '<div class="history-empty">No sessions logged yet. Start today!</div>';
     } else {
       container.innerHTML = '<div class="history-empty" style="padding:24px 16px">Tap a highlighted day to see details.</div>';
@@ -1555,40 +1580,46 @@ function renderCalendarDetail(data) {
     return;
   }
 
-  const sessions = (data[currentProfile] || []).filter(s => s.date === calSelectedDate);
-  if (!sessions.length) {
-    container.innerHTML = '';
-    return;
-  }
-
   let html = '';
-  sessions.forEach(session => {
-    let exHTML = '';
-    (session.exercises || []).forEach(ex => {
-      const u = getUnitForExercise(ex.name);
-      let setsHTML = '';
-      (ex.sets || []).forEach((s, i) => {
-        const wDisplay = s.weight ? (u === 'lb' ? escapeHtml(String(kgToLb(parseFloat(s.weight)))) + 'lb' : escapeHtml(s.weight) + 'kg') : '—';
-        setsHTML += `<div class="hs-set">
-          <span class="hs-set-num">S${i+1}</span>
-          <span>${wDisplay} × ${s.reps ? escapeHtml(String(s.reps)) : '—'} reps</span>
-          ${s.note ? `<span class="hs-note">${escapeHtml(s.note)}</span>` : ''}
-        </div>`;
-      });
-      exHTML += `<div class="hs-ex"><div class="hs-ex-name">${escapeHtml(ex.name)}</div>${setsHTML}</div>`;
-    });
+  const profiles = [
+    { key: 'luis', label: 'Luis', color: '#f5c842' },
+    { key: 'her', label: 'Karla', color: '#f48fb1' }
+  ];
 
-    html += `<div class="cal-detail">
-      <div class="cal-detail-head">
-        <div>
-          <div class="cal-detail-title">${escapeHtml(session.dayName || 'Session')}</div>
-          <div class="cal-detail-date">${formatDate(session.date)}</div>
+  profiles.forEach(prof => {
+    const sessions = (data[prof.key] || []).filter(s => s.date === calSelectedDate);
+    if (!sessions.length) return;
+
+    sessions.forEach(session => {
+      let exHTML = '';
+      (session.exercises || []).forEach(ex => {
+        const u = getUnitForExercise(ex.name);
+        let setsHTML = '';
+        (ex.sets || []).forEach((s, i) => {
+          const wDisplay = s.weight ? (u === 'lb' ? escapeHtml(String(kgToLb(parseFloat(s.weight)))) + 'lb' : escapeHtml(s.weight) + 'kg') : '—';
+          setsHTML += `<div class="hs-set">
+            <span class="hs-set-num">S${i+1}</span>
+            <span>${wDisplay} × ${s.reps ? escapeHtml(String(s.reps)) : '—'} reps</span>
+            ${s.note ? `<span class="hs-note">${escapeHtml(s.note)}</span>` : ''}
+          </div>`;
+        });
+        exHTML += `<div class="hs-ex"><div class="hs-ex-name">${escapeHtml(ex.name)}</div>${setsHTML}</div>`;
+      });
+
+      html += `<div class="cal-detail">
+        <div class="cal-detail-head">
+          <div>
+            <div class="cal-detail-title"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${prof.color};margin-right:6px;vertical-align:middle"></span>${escapeHtml(prof.label)} — ${escapeHtml(session.dayName || 'Session')}</div>
+            <div class="cal-detail-date">${formatDate(session.date)}</div>
+          </div>
+          <button class="del-session-btn" data-profile="${escapeAttr(prof.key)}" data-date="${escapeAttr(session.date)}" data-dayidx="${session.dayIdx}" aria-label="Delete session">Delete</button>
         </div>
-        <button class="del-session-btn" data-profile="${escapeAttr(currentProfile)}" data-date="${escapeAttr(session.date)}" data-dayidx="${session.dayIdx}" aria-label="Delete session">Delete</button>
-      </div>
-      <div class="cal-detail-body">${exHTML}</div>
-    </div>`;
+        <div class="cal-detail-body">${exHTML}</div>
+      </div>`;
+    });
   });
+
+  if (!html) { container.innerHTML = ''; return; }
 
   container.innerHTML = html;
 
@@ -1602,7 +1633,7 @@ function renderCalendarDetail(data) {
 
 function renderWeeklyStats(data) {
   const container = document.getElementById('history-weekly-stats');
-  const sessions = data[currentProfile] || [];
+  const allSessions = (data.luis || []).concat(data.her || []);
 
   const now = new Date();
   const weekStart = new Date(now);
@@ -1614,7 +1645,7 @@ function renderWeeklyStats(data) {
   let weekSets = 0;
   let weekVolume = 0;
 
-  sessions.forEach(s => {
+  allSessions.forEach(s => {
     if (s.date >= weekStartStr) {
       weekSessions++;
       (s.exercises || []).forEach(ex => {
