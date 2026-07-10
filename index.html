@@ -708,10 +708,40 @@ canvas#bodyChart { width:100% !important; }
 #toast {
   position:fixed; bottom:88px; left:50%; transform:translateX(-50%) translateY(20px);
   background:var(--s3); border:1px solid var(--border2); border-radius:var(--radius);
-  padding:10px 18px; font-size:13px; font-weight:500; color:var(--text);
+  padding:10px 14px; font-size:13px; font-weight:500; color:var(--text);
   opacity:0; transition:all 0.25s; z-index:300; white-space:nowrap; pointer-events:none;
+  display:flex; align-items:center; gap:12px;
 }
 #toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
+#toast-undo-btn {
+  background:none; border:1px solid var(--border2); color:var(--accent);
+  font-family:var(--font); font-size:11px; font-weight:700;
+  padding:3px 10px; border-radius:var(--radius); cursor:pointer; flex-shrink:0;
+}
+
+/* ── WORKOUT SUMMARY MODAL ── */
+#workout-summary-modal {
+  position:fixed; inset:0; z-index:250;
+  background:rgba(0,0,0,0.85); backdrop-filter:blur(4px);
+  display:none; align-items:flex-end; justify-content:center;
+}
+#workout-summary-modal.open { display:flex; }
+.wo-summary-sheet {
+  width:100%; max-width:480px; max-height:88vh; overflow-y:auto;
+  background:var(--s1); border-radius:12px 12px 0 0;
+  border-top:1px solid var(--border2);
+}
+@media (min-width:768px) { .wo-summary-sheet { max-width:600px; } }
+@media (min-width:1024px) { .wo-summary-sheet { max-width:720px; } }
+
+/* prev exercise compact rows */
+.wo-prev-ex-row {
+  display:flex; align-items:center; gap:8px;
+  padding:8px 12px; border-bottom:1px solid var(--border); min-width:0;
+}
+.wo-prev-ex-row.editing { background:var(--s2); }
+.wo-prev-ex-name-compact { font-size:12px; font-weight:600; flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.wo-prev-ex-expand { border-bottom:1px solid var(--border); background:var(--s2); }
 
 /* ── UTIL ── */
 .section-eyebrow {
@@ -951,7 +981,14 @@ canvas#bodyChart { width:100% !important; }
   </div>
 </div>
 
-<div id="toast" role="status" aria-live="polite"></div>
+<div id="toast" role="status" aria-live="polite"><span id="toast-msg"></span><button id="toast-undo-btn" onclick="executeToastUndo()" style="display:none">Undo</button></div>
+
+<!-- WORKOUT SUMMARY MODAL -->
+<div id="workout-summary-modal">
+  <div class="wo-summary-sheet">
+    <div id="workout-summary-content"></div>
+  </div>
+</div>
 
 <script>
 // ─────────────────────────────────────────
@@ -1148,6 +1185,7 @@ function switchProfile(p) {
   if (p === currentProfile) return;
   currentProfile = p;
   calSelectedDate = null;
+  routineEditorOpen = false;
   document.getElementById('app').className = p === 'her' ? 'profile-her' : '';
   document.getElementById('btn-luis').className = 'pt-btn' + (p === 'luis' ? ' active-luis' : '');
   document.getElementById('btn-her').className = 'pt-btn' + (p === 'her' ? ' active-her' : '');
@@ -1413,7 +1451,7 @@ function renderWorkout() {
   if (!wo) return;
   document.getElementById('today-streak').style.display = 'none';
 
-  if (wo.finished) { renderWorkoutSummary(); return; }
+  if (wo.finished) { container.innerHTML = ''; showWorkoutSummaryModal(); return; }
 
   if (wo.viewMode === 'prev') { renderPrevExercises(); return; }
   if (wo.viewMode === 'next') { renderNextExercises(); return; }
@@ -1439,17 +1477,6 @@ function renderWorkout() {
 
   let html = woTimerBarHtml(`${doneCount}/${wo.queue.length} exercises`);
   html += '<div class="wo-content-body">';
-
-  if (wo.postponed.length) {
-    html += `<div class="wo-postponed"><div class="wo-postponed-title">Postponed (${wo.postponed.length})</div>`;
-    wo.postponed.forEach((p, pi) => {
-      html += `<div class="wo-postponed-item">
-        <span class="wo-postponed-name">${escapeHtml(p.name)}</span>
-        <button class="wo-insert-btn" onclick="insertPostponed(${pi})">Insert now</button>
-      </div>`;
-    });
-    html += '</div>';
-  }
 
   html += `<div class="wo-exercise-card" id="wo-card" data-swipe="true">
     <div class="wo-ex-header">
@@ -1535,6 +1562,18 @@ function renderWorkout() {
     <button class="wo-action-btn postpone" onclick="postponeExercise()">Postpone</button>
     <button class="wo-action-btn skip" onclick="skipExercise()">Skip</button>
   </div></div>`;
+
+  if (wo.postponed.length) {
+    html += `<div class="wo-postponed"><div class="wo-postponed-title">Postponed (${wo.postponed.length})</div>`;
+    wo.postponed.forEach((p, pi) => {
+      html += `<div class="wo-postponed-item">
+        <span class="wo-postponed-name">${escapeHtml(p.name)}</span>
+        <button class="wo-insert-btn" onclick="insertPostponed(${pi})">Insert now</button>
+      </div>`;
+    });
+    html += '</div>';
+  }
+
   html += '</div>';
 
   container.innerHTML = html;
@@ -1688,27 +1727,32 @@ function renderPrevExercises() {
 
   let html = woTimerBarHtml('Viewing previous — swipe up to return');
   html += '<div class="wo-content-body">';
+  html += '<div class="wo-prev-exercise-card">';
 
+  let hasAny = false;
   for (let i = wo.viewIdx; i >= 0; i--) {
     const ex = wo.queue[i];
     if (!ex.done && !ex.skipped) continue;
+    hasAny = true;
     const editing = wo.editingPrevIdx === i;
     currentUnit = getUnitForExercise(ex.name);
-    html += `<div class="wo-prev-exercise-card">
-      <div class="wo-prev-ex-header">
-        <span class="wo-prev-ex-name">${escapeHtml(ex.name)}</span>
-        <div style="display:flex;gap:6px;align-items:center">
-          <span class="wo-prev-ex-badge">${ex.skipped ? 'Skipped' : getWorkSetsCount(ex.sets) + ' sets'}</span>
-          <button class="wo-action-btn" style="flex:0;padding:5px 10px;font-size:10px" onclick="toggleEditPrev(${i})">${editing ? 'Done' : 'Edit'}</button>
-        </div>
-      </div>`;
-    if (ex.sets.length) {
-      html += '<div class="wo-logged-sets">';
-      let wn = 0;
-      ex.sets.forEach((s, si) => {
-        const numLabel = s.warmup ? 'W' : String(++wn);
-        const numClass = s.warmup ? 'wo-set-num warmup' : 'wo-set-num';
-        if (editing) {
+    const badgeText = ex.skipped ? 'Skipped' : (getWorkSetsCount(ex.sets) + ' sets');
+    const badgeStyle = ex.skipped ? 'color:var(--dim)' : '';
+
+    html += `<div class="wo-prev-ex-row${editing ? ' editing' : ''}">
+      <span class="wo-prev-ex-name-compact">${escapeHtml(ex.name)}</span>
+      <span class="wo-prev-ex-badge" style="${badgeStyle}">${badgeText}</span>
+      <button class="wo-action-btn" style="flex:0;padding:4px 10px;font-size:10px" onclick="toggleEditPrev(${i})">${editing ? 'Done' : 'Edit'}</button>
+    </div>`;
+
+    if (editing) {
+      html += '<div class="wo-prev-ex-expand">';
+      if (ex.sets.length) {
+        html += '<div class="wo-logged-sets">';
+        let wn = 0;
+        ex.sets.forEach((s, si) => {
+          const numLabel = s.warmup ? 'W' : String(++wn);
+          const numClass = s.warmup ? 'wo-set-num warmup' : 'wo-set-num';
           const wVal = displayWeight(s.weight);
           html += `<div class="wo-logged-set">
             <span class="${numClass}">${numLabel}</span>
@@ -1716,27 +1760,24 @@ function renderPrevExercises() {
             <input type="number" class="wo-edit-input" value="${s.reps}" inputmode="numeric" onchange="editPrevSet(${i},${si},'reps',this.value)" style="width:50px;background:var(--s2);border:1px solid var(--border2);border-radius:var(--radius);color:var(--text);font-size:12px;padding:4px 6px;text-align:center">
             <button class="wo-del-set" onclick="deletePrevSet(${i},${si})" aria-label="Delete">✕</button>
           </div>`;
-        } else {
-          html += `<div class="wo-logged-set">
-            <span class="${numClass}">${numLabel}</span>
-            <span class="wo-set-detail">${displayWeight(s.weight)}${currentUnit}</span>
-            <span class="wo-set-detail">${s.reps} reps</span>
-            <span></span>
-          </div>`;
-        }
-      });
+        });
+        html += '</div>';
+      }
+      const hasWarmup = ex.sets.length > 0 && ex.sets[0].warmup;
+      html += `<div style="display:flex;gap:6px;padding:6px 12px;border-top:1px solid var(--border2)">
+        <button class="wo-action-btn" style="flex:1;padding:5px 8px;font-size:10px" onclick="addPrevSet(${i})">+ Add set</button>
+        <button class="wo-warmup-toggle${hasWarmup ? ' active' : ''}" style="font-size:9px;padding:5px 8px" onclick="togglePrevWarmup(${i})">W</button>
+        <button class="wo-action-btn" style="flex:0;padding:5px 8px;font-size:10px;color:var(--red);border-color:var(--red-dim)" onclick="removePrevExercise(${i})">Remove</button>
+      </div>`;
       html += '</div>';
     }
-    if (editing) {
-      const hasWarmup = ex.sets.length > 0 && ex.sets[0].warmup;
-      html += `<div style="display:flex;gap:6px;padding:8px 14px">
-        <button class="wo-action-btn" style="flex:1;padding:5px 10px;font-size:10px" onclick="addPrevSet(${i})">+ Add set</button>
-        <button class="wo-warmup-toggle${hasWarmup ? ' active' : ''}" style="font-size:9px;padding:5px 8px" onclick="togglePrevWarmup(${i})">W</button>
-      </div>`;
-    }
-    html += '</div>';
   }
-  html += '</div>';
+
+  if (!hasAny) {
+    html += '<div style="padding:16px;text-align:center;color:var(--dim);font-size:12px">No previous exercises</div>';
+  }
+
+  html += '</div></div>';
 
   container.innerHTML = html;
   updateWorkoutTimer();
@@ -1817,6 +1858,28 @@ function togglePrevWarmup(exIdx) {
   renderPrevExercises();
 }
 
+function removePrevExercise(exIdx) {
+  const wo = getWo();
+  if (!wo) return;
+  const ex = wo.queue[exIdx];
+  ex.done = false;
+  ex.skipped = false;
+  ex.sets = [];
+  wo.postponed.push(ex);
+  wo.queue.splice(exIdx, 1);
+  if (exIdx < wo.currentIdx) wo.currentIdx--;
+  if (exIdx <= wo.viewIdx) wo.viewIdx--;
+  wo.editingPrevIdx = null;
+  saveWorkoutProgress();
+  if (wo.viewIdx < 0) {
+    wo.viewMode = null;
+    wo.viewIdx = null;
+    renderWorkout();
+  } else {
+    renderPrevExercises();
+  }
+}
+
 function logWorkoutSet() {
   const wo = getWo();
   if (!wo) return;
@@ -1857,8 +1920,15 @@ function finishExercise() {
 function skipExercise() {
   const wo = getWo();
   if (!wo) return;
-  wo.queue[wo.currentIdx].skipped = true;
+  const skippedIdx = wo.currentIdx;
+  wo.queue[skippedIdx].skipped = true;
   advanceToNext();
+  showToast('Exercise skipped', () => {
+    if (!wo || wo.finished) return;
+    wo.queue[skippedIdx].skipped = false;
+    wo.currentIdx = skippedIdx;
+    renderWorkout();
+  });
 }
 
 function postponeExercise() {
@@ -1969,9 +2039,9 @@ function saveWorkoutProgress() {
   saveData(data);
 }
 
-function renderWorkoutSummary() {
-  const container = document.getElementById('today-content');
+function showWorkoutSummaryModal() {
   const wo = getWo();
+  if (!wo) return;
   const duration = formatDuration(wo.endTime - wo.startTime);
   let totalSets = 0, totalVol = 0;
   const exercisesDone = [];
@@ -1987,10 +2057,7 @@ function renderWorkoutSummary() {
     nonWarmup.forEach(s => {
       totalVol += (parseFloat(s.weight) || 0) * (parseInt(s.reps) || 0);
     });
-    const setsStr = ex.sets.map(s => {
-      const tag = s.warmup ? ' <span class="wo-warmup-tag">W</span>' : '';
-      return `${s.weight || '?'}kg × ${s.reps || '?'}${tag}`;
-    }).join(', ');
+    const setsStr = ex.sets.map(s => `${s.weight || '?'}kg × ${s.reps || '?'}`).join(', ');
     exercisesDone.push({ name: ex.name, setsStr, count: ex.sets.length });
   });
 
@@ -2012,10 +2079,16 @@ function renderWorkoutSummary() {
   });
 
   html += `<button class="wo-done-btn" onclick="endWorkout()">Done</button></div>`;
-  container.innerHTML = html;
+  document.getElementById('workout-summary-content').innerHTML = html;
+  document.getElementById('workout-summary-modal').classList.add('open');
+}
+
+function closeWorkoutSummaryModal() {
+  document.getElementById('workout-summary-modal').classList.remove('open');
 }
 
 function endWorkout() {
+  closeWorkoutSummaryModal();
   setWo(null);
   renderToday();
 }
@@ -2987,19 +3060,28 @@ function confirmClearData() {
 // ─────────────────────────────────────────
 // ROUTINE EDITOR
 // ─────────────────────────────────────────
-let reProfile = 'luis';
+let routineEditorOpen = false;
 
 function renderRoutineEditor() {
   const container = document.getElementById('routine-editor');
-  const routines = ROUTINES;
-  const profile = reProfile;
-  const routine = routines[profile];
+  const profile = currentProfile;
+  const routine = ROUTINES[profile];
+
+  if (!routineEditorOpen) {
+    container.innerHTML = `<div class="settings-item" onclick="routineEditorOpen=true;renderRoutineEditor()" role="button" tabindex="0">
+      <div class="settings-item-left">
+        <div class="settings-item-label">Edit Routines</div>
+        <div class="settings-item-desc">${profile === 'luis' ? 'Luis' : 'Karla'} · ${routine.length}-day program</div>
+      </div>
+      <div class="settings-item-icon"><svg viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></div>
+    </div>`;
+    return;
+  }
 
   let html = `<div class="re-section">
-    <div class="re-section-title">Edit Routines</div>
-    <div class="re-profile-tabs">
-      <button class="re-profile-tab${profile==='luis'?' active':''}" onclick="reProfile='luis';renderRoutineEditor()">Luis</button>
-      <button class="re-profile-tab${profile==='her'?' active':''}" onclick="reProfile='her';renderRoutineEditor()">Karla</button>
+    <div class="re-section-title" style="display:flex;justify-content:space-between;align-items:center">
+      <span>${profile === 'luis' ? 'Luis' : 'Karla'} — Edit Routines</span>
+      <button onclick="routineEditorOpen=false;renderRoutineEditor()" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:20px;line-height:1;padding:0 2px">×</button>
     </div>`;
 
   routine.forEach((day, di) => {
@@ -3076,11 +3158,33 @@ function formatDateShort(str) {
   return (d.getMonth()+1) + '/' + d.getDate();
 }
 
-function showToast(msg) {
+function showToast(msg, undoFn) {
   const t = document.getElementById('toast');
-  t.textContent = msg;
+  const msgEl = document.getElementById('toast-msg');
+  const undoEl = document.getElementById('toast-undo-btn');
+  if (t._toastTimer) clearTimeout(t._toastTimer);
+  msgEl.textContent = msg;
+  t._undoFn = undoFn || null;
+  if (undoFn) {
+    undoEl.style.display = '';
+    t.style.pointerEvents = 'auto';
+  } else {
+    undoEl.style.display = 'none';
+    t.style.pointerEvents = '';
+  }
   t.classList.add('show');
-  setTimeout(() => t.classList.remove('show'), 2000);
+  t._toastTimer = setTimeout(() => {
+    t.classList.remove('show');
+    t._undoFn = null;
+    t._toastTimer = null;
+  }, undoFn ? 3500 : 2000);
+}
+
+function executeToastUndo() {
+  const t = document.getElementById('toast');
+  t.classList.remove('show');
+  if (t._toastTimer) { clearTimeout(t._toastTimer); t._toastTimer = null; }
+  if (t._undoFn) { t._undoFn(); t._undoFn = null; }
 }
 
 // ─────────────────────────────────────────
