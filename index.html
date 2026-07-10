@@ -164,11 +164,11 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
 .wo-ex-meta { font-size:11px; color:var(--muted); margin-top:3px; }
 .wo-ex-note { font-size:11px; color:var(--dim); font-style:italic; margin-top:2px; }
 .wo-unit-btn {
-  background:var(--s3); border:1px solid var(--border2); color:var(--muted);
+  background:transparent; border:1px solid var(--accent); color:var(--accent);
   font-family:var(--font); font-size:10px; font-weight:700; letter-spacing:0.5px;
   padding:3px 10px; border-radius:2px; cursor:pointer; flex-shrink:0;
 }
-.wo-unit-btn:hover { border-color:var(--accent); color:var(--accent); }
+.wo-unit-btn:active { background:var(--accent-dim); }
 .wo-perside-btn {
   background:var(--s3); border:1px solid var(--border2); color:var(--dim);
   font-family:var(--font); font-size:10px; font-weight:700;
@@ -1161,11 +1161,13 @@ function loadUnitPrefs() {
 }
 function saveUnitPref(exName, unit) {
   const prefs = loadUnitPrefs();
-  prefs[exName] = unit;
+  if (!prefs[currentProfile]) prefs[currentProfile] = {};
+  prefs[currentProfile][exName] = unit;
   localStorage.setItem(UNIT_STORAGE_KEY, JSON.stringify(prefs));
 }
 function getUnitForExercise(exName) {
-  return loadUnitPrefs()[exName] || 'kg';
+  const prefs = loadUnitPrefs();
+  return (prefs[currentProfile] && prefs[currentProfile][exName]) || 'kg';
 }
 
 const STORAGE_KEY = 'gymtracker_v1';
@@ -1435,14 +1437,15 @@ function getWorkSetsCount(sets) {
 }
 
 function getSetDefaultWeight(wo, cur, data) {
-  if (cur.sets.length) {
-    const last = cur.sets[cur.sets.length - 1];
-    return last.weight ? displayWeight(last.weight) : '';
+  if (cur.sets.length === 0) {
+    const bestW = getBestWeight(data, currentProfile, cur.name);
+    return bestW ? displayWeight(bestW) : '';
   }
-  const lastW = getLastWeight(data, currentProfile, cur.name);
-  if (lastW) return displayWeight(lastW);
-  const bestW = getBestWeight(data, currentProfile, cur.name);
-  return bestW ? displayWeight(bestW) : '';
+  const sessionMax = cur.sets.reduce((max, s) => {
+    const w = parseFloat(s.weight) || 0;
+    return w > max ? w : max;
+  }, 0);
+  return sessionMax > 0 ? displayWeight(String(sessionMax)) : '';
 }
 
 function renderWorkout() {
