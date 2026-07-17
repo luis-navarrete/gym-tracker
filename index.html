@@ -112,6 +112,13 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
 .today-date { font-size:11px; font-weight:500; letter-spacing:2px; text-transform:uppercase; color:var(--muted); margin-bottom:4px; }
 .today-day { font-size:28px; font-weight:900; letter-spacing:-0.5px; line-height:1; }
 .today-day span { color:var(--accent); }
+.today-day-row { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+.day-switch-select {
+  background:var(--s2); border:1px solid var(--border2); border-radius:var(--radius);
+  color:var(--muted); font-family:var(--font); font-size:11px; font-weight:600;
+  padding:6px 8px; max-width:150px; flex-shrink:0;
+}
+.day-switch-select:focus { outline:none; border-color:var(--accent); }
 
 /* overview list */
 .overview-list { margin:0 16px; }
@@ -810,7 +817,10 @@ canvas#bodyChart { width:100% !important; }
     <section class="page active" id="page-today" aria-label="Today's workout">
       <div class="today-header">
         <div class="today-date" id="today-date-label"></div>
-        <div class="today-day" id="today-day-label"></div>
+        <div class="today-day-row">
+          <div class="today-day" id="today-day-label"></div>
+          <select class="day-switch-select" id="day-switch-select" onchange="setDayOverride(this.value)" aria-label="Change today's routine"></select>
+        </div>
       </div>
       <div id="today-streak"></div>
       <div id="today-content"></div>
@@ -1156,6 +1166,9 @@ let woState = { luis: null, her: null };
 function getWo() { return woState[currentProfile]; }
 function setWo(v) { woState[currentProfile] = v; }
 
+// per-profile override of which day's routine to run today
+let dayOverride = { luis: null, her: null };
+
 function loadUnitPrefs() {
   try { return JSON.parse(localStorage.getItem(UNIT_STORAGE_KEY)) || {}; } catch { return {}; }
 }
@@ -1295,6 +1308,26 @@ function getTodayDayIndex() {
   if (d === 0 || d === 6) return -1;
   return d - 1;
 }
+function getEffectiveDayIndex() {
+  const override = dayOverride[currentProfile];
+  return (override !== null && override !== undefined) ? override : getTodayDayIndex();
+}
+function setDayOverride(val) {
+  dayOverride[currentProfile] = val === 'auto' ? null : parseInt(val);
+  renderToday();
+}
+function renderDaySwitcher() {
+  const sel = document.getElementById('day-switch-select');
+  if (!sel) return;
+  const override = dayOverride[currentProfile];
+  const routine = ROUTINES[currentProfile];
+  let html = '<option value="auto">Today\'s routine</option>';
+  routine.forEach((d, i) => {
+    html += `<option value="${i}">${escapeHtml(d.label)} — ${escapeHtml(d.day)}</option>`;
+  });
+  sel.innerHTML = html;
+  sel.value = (override === null || override === undefined) ? 'auto' : String(override);
+}
 function getTodayLog(data, profile, dateStr, dayIdx, exIdx) {
   const logs = data[profile] || [];
   const session = logs.find(s => s.date === dateStr && s.dayIdx === dayIdx);
@@ -1314,15 +1347,19 @@ function renderToday() {
     `${dayNames[dayOfWeek]}, ${months[now.getMonth()]} ${now.getDate()}`;
 
   const streakEl = document.getElementById('today-streak');
+  const daySwitchSel = document.getElementById('day-switch-select');
   if (getWo()) {
     streakEl.style.display = 'none';
+    if (daySwitchSel) daySwitchSel.style.display = 'none';
     renderWorkout();
     return;
   }
   streakEl.style.display = '';
+  if (daySwitchSel) daySwitchSel.style.display = '';
   renderStreak();
+  renderDaySwitcher();
 
-  const dayIdx = getTodayDayIndex();
+  const dayIdx = getEffectiveDayIndex();
   const container = document.getElementById('today-content');
   container.innerHTML = '';
 
@@ -1388,7 +1425,7 @@ function renderStreak() {
 // WORKOUT MODE
 // ─────────────────────────────────────────
 function startWorkout() {
-  const dayIdx = getTodayDayIndex();
+  const dayIdx = getEffectiveDayIndex();
   if (dayIdx === -1) return;
   const dayData = ROUTINES[currentProfile][dayIdx];
   const data = loadData();
@@ -1441,11 +1478,8 @@ function getSetDefaultWeight(wo, cur, data) {
     const bestW = getBestWeight(data, currentProfile, cur.name);
     return bestW ? displayWeight(bestW) : '';
   }
-  const sessionMax = cur.sets.reduce((max, s) => {
-    const w = parseFloat(s.weight) || 0;
-    return w > max ? w : max;
-  }, 0);
-  return sessionMax > 0 ? displayWeight(String(sessionMax)) : '';
+  const last = cur.sets[cur.sets.length - 1];
+  return last.weight ? displayWeight(last.weight) : '';
 }
 
 function renderWorkout() {
