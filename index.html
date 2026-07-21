@@ -1504,6 +1504,16 @@ function getSetDefaultWeight(wo, cur, data) {
   return last.weight ? displayWeight(last.weight) : '';
 }
 
+function getBestWeightSoFar(cur, data) {
+  const historicalBest = parseFloat(getBestWeight(data, currentProfile, cur.name)) || 0;
+  const sessionBest = cur.sets.filter(s => !s.warmup).reduce((max, s) => {
+    const w = parseFloat(s.weight) || 0;
+    return w > max ? w : max;
+  }, 0);
+  const best = Math.max(historicalBest, sessionBest);
+  return best > 0 ? displayWeight(String(best)) : '';
+}
+
 function getSetDefaultReps(cur, targetReps) {
   const workSets = cur.sets.filter(s => !s.warmup);
   if (workSets.length === 0) return { reps: targetReps, repsR: targetReps };
@@ -1533,11 +1543,11 @@ function renderWorkout() {
   const targetSets = parseTargetSets(cur.target) || 3;
   const targetReps = parseTargetReps(cur.target);
   const defWeight = getSetDefaultWeight(wo, cur, data);
+  const bestWeight = getBestWeightSoFar(cur, data);
   const defReps = getSetDefaultReps(cur, targetReps);
   const repWord = cur.repMode === 'sec' ? 'sec' : 'reps';
   const repLabel = cur.repMode === 'sec' ? 'Sec' : 'Reps';
   const workSets = getWorkSetsCount(cur.sets);
-  const defWeightLabel = workSets === 0 ? 'best' : 'last';
   const isFirst = cur.sets.length === 0;
   const doneCount = wo.queue.filter(e => e.done || e.skipped).length;
 
@@ -1558,7 +1568,7 @@ function renderWorkout() {
         <button class="wo-unit-btn" onclick="toggleWorkoutUnit()">${currentUnit.toUpperCase()}</button>
         <button class="wo-perside-btn${cur.perSide ? ' active' : ''}" onclick="toggleWorkoutPerSide()">L/R</button>
       </div>
-      <div class="wo-ex-meta">${escapeHtml(cur.target)}${defWeight ? ' · ' + defWeightLabel + ': ' + weightUnitLabel(defWeight, currentUnit) : ''}</div>
+      <div class="wo-ex-meta">${escapeHtml(cur.target)}${bestWeight ? ' · best: ' + weightUnitLabel(bestWeight, currentUnit) : ''}</div>
       ${cur.note ? '<div class="wo-ex-note">' + escapeHtml(cur.note) + '</div>' : ''}
     </div>`;
 
