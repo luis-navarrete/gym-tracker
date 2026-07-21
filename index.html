@@ -1696,7 +1696,6 @@ function deleteWorkoutSet(idx) {
   const wo = getWo();
   if (!wo) return;
   wo.queue[wo.currentIdx].sets.splice(idx, 1);
-  saveWorkoutProgress();
   renderWorkout();
 }
 
@@ -1908,14 +1907,12 @@ function editPrevSet(exIdx, setIdx, field, value) {
   } else if (field === 'reps') {
     set.reps = value;
   }
-  saveWorkoutProgress();
 }
 
 function deletePrevSet(exIdx, setIdx) {
   const wo = getWo();
   if (!wo) return;
   wo.queue[exIdx].sets.splice(setIdx, 1);
-  saveWorkoutProgress();
   renderPrevExercises();
 }
 
@@ -1927,7 +1924,6 @@ function addPrevSet(exIdx) {
   const weight = lastSet ? lastSet.weight : '0';
   const reps = lastSet ? lastSet.reps : '0';
   ex.sets.push({ weight, reps, warmup: false });
-  saveWorkoutProgress();
   renderPrevExercises();
 }
 
@@ -1937,7 +1933,6 @@ function togglePrevWarmup(exIdx) {
   const ex = wo.queue[exIdx];
   if (!ex.sets.length) return;
   ex.sets[0].warmup = !ex.sets[0].warmup;
-  saveWorkoutProgress();
   renderPrevExercises();
 }
 
@@ -1953,7 +1948,6 @@ function removePrevExercise(exIdx) {
   if (exIdx < wo.currentIdx) wo.currentIdx--;
   if (exIdx <= wo.viewIdx) wo.viewIdx--;
   wo.editingPrevIdx = null;
-  saveWorkoutProgress();
   if (wo.viewIdx < 0) {
     wo.viewMode = null;
     wo.viewIdx = null;
@@ -1989,7 +1983,6 @@ function logWorkoutSet() {
   }
 
   cur.sets.push(entry);
-  saveWorkoutProgress();
   renderWorkout();
 }
 
