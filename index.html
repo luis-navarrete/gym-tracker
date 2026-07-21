@@ -1537,6 +1537,7 @@ function renderWorkout() {
   const repWord = cur.repMode === 'sec' ? 'sec' : 'reps';
   const repLabel = cur.repMode === 'sec' ? 'Sec' : 'Reps';
   const workSets = getWorkSetsCount(cur.sets);
+  const defWeightLabel = workSets === 0 ? 'best' : 'last';
   const isFirst = cur.sets.length === 0;
   const doneCount = wo.queue.filter(e => e.done || e.skipped).length;
 
@@ -1557,7 +1558,7 @@ function renderWorkout() {
         <button class="wo-unit-btn" onclick="toggleWorkoutUnit()">${currentUnit.toUpperCase()}</button>
         <button class="wo-perside-btn${cur.perSide ? ' active' : ''}" onclick="toggleWorkoutPerSide()">L/R</button>
       </div>
-      <div class="wo-ex-meta">${escapeHtml(cur.target)}${defWeight ? ' · last: ' + weightUnitLabel(defWeight, currentUnit) : ''}</div>
+      <div class="wo-ex-meta">${escapeHtml(cur.target)}${defWeight ? ' · ' + defWeightLabel + ': ' + weightUnitLabel(defWeight, currentUnit) : ''}</div>
       ${cur.note ? '<div class="wo-ex-note">' + escapeHtml(cur.note) + '</div>' : ''}
     </div>`;
 
