@@ -383,6 +383,12 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
   background:none; border:none; color:var(--dim); cursor:pointer; font-size:14px; padding:2px;
 }
 .re-ex-del:hover { color:var(--red); }
+.re-mode-btn {
+  background:var(--s3); border:1px solid var(--border2); color:var(--muted);
+  font-family:var(--font); font-size:9px; font-weight:700; letter-spacing:0.3px;
+  padding:5px 6px; border-radius:var(--radius); cursor:pointer; flex-shrink:0; white-space:nowrap;
+}
+.re-mode-btn.active { border-color:var(--accent); color:var(--accent); background:var(--accent-dim); }
 .re-add-ex {
   background:var(--s2); border:1px dashed var(--border2); border-radius:var(--radius);
   color:var(--muted); font-family:var(--font); font-size:11px; font-weight:500;
@@ -1182,6 +1188,14 @@ function getUnitForExercise(exName) {
   const prefs = loadUnitPrefs();
   return (prefs[currentProfile] && prefs[currentProfile][exName]) || 'kg';
 }
+function getExerciseRepMode(profile, exName) {
+  const routine = ROUTINES[profile] || [];
+  for (const day of routine) {
+    const ex = (day.exercises || []).find(e => e.name === exName);
+    if (ex) return ex.repMode === 'sec' ? 'sec' : 'reps';
+  }
+  return 'reps';
+}
 
 const STORAGE_KEY = 'gymtracker_v1';
 
@@ -1259,6 +1273,12 @@ function toStorageWeight(displayVal) {
   const v = parseFloat(displayVal);
   if (isNaN(v)) return displayVal;
   return currentUnit === 'lb' ? String(lbToKg(v)) : String(v);
+}
+function weightUnitLabel(displayVal, unit) {
+  if (displayVal === '' || displayVal === undefined || displayVal === null) return '';
+  const v = parseFloat(displayVal);
+  if (!isNaN(v) && v === 0) return 'BW';
+  return displayVal + unit;
 }
 function parseTargetSets(target) {
   const m = target.match(/^(\d+)\s*[×x]/i);
@@ -1378,7 +1398,7 @@ function renderToday() {
   dayData.exercises.forEach(ex => {
     const lastW = getLastWeight(data, currentProfile, ex.name);
     const unit = getUnitForExercise(ex.name);
-    const wStr = lastW ? `${unit === 'lb' ? kgToLb(parseFloat(lastW)) : lastW}${unit}` : '';
+    const wStr = lastW ? weightUnitLabel(unit === 'lb' ? String(kgToLb(parseFloat(lastW))) : lastW, unit) : '';
     html += `<div class="overview-ex">
       <div><div class="overview-ex-name">${escapeHtml(ex.name)}</div>
       <div class="overview-ex-target">${escapeHtml(ex.target)}${wStr ? ' · last: ' + wStr : ''}</div></div>
@@ -1436,6 +1456,7 @@ function startWorkout() {
     timerInterval: null,
     queue: dayData.exercises.map((ex, i) => ({
       exIdx: i, name: ex.name, target: ex.target, note: ex.note || '',
+      repMode: ex.repMode === 'sec' ? 'sec' : 'reps',
       perSide: isPerSideExercise(ex.target),
       sets: [], done: false, skipped: false
     })),
@@ -1474,12 +1495,33 @@ function getWorkSetsCount(sets) {
 }
 
 function getSetDefaultWeight(wo, cur, data) {
-  if (cur.sets.length === 0) {
+  const workSets = cur.sets.filter(s => !s.warmup);
+  if (workSets.length === 0) {
     const bestW = getBestWeight(data, currentProfile, cur.name);
     return bestW ? displayWeight(bestW) : '';
   }
-  const last = cur.sets[cur.sets.length - 1];
+  const last = workSets[workSets.length - 1];
   return last.weight ? displayWeight(last.weight) : '';
+}
+
+function getBestWeightSoFar(cur, data) {
+  const historicalBest = parseFloat(getBestWeight(data, currentProfile, cur.name)) || 0;
+  const sessionBest = cur.sets.filter(s => !s.warmup).reduce((max, s) => {
+    const w = parseFloat(s.weight) || 0;
+    return w > max ? w : max;
+  }, 0);
+  const best = Math.max(historicalBest, sessionBest);
+  return best > 0 ? displayWeight(String(best)) : '';
+}
+
+function getSetDefaultReps(cur, targetReps) {
+  const workSets = cur.sets.filter(s => !s.warmup);
+  if (workSets.length === 0) return { reps: targetReps, repsR: targetReps };
+  const last = workSets[workSets.length - 1];
+  return {
+    reps: last.reps || targetReps,
+    repsR: (last.repsR !== undefined && last.repsR !== '') ? last.repsR : (last.reps || targetReps)
+  };
 }
 
 function renderWorkout() {
@@ -1501,6 +1543,10 @@ function renderWorkout() {
   const targetSets = parseTargetSets(cur.target) || 3;
   const targetReps = parseTargetReps(cur.target);
   const defWeight = getSetDefaultWeight(wo, cur, data);
+  const bestWeight = getBestWeightSoFar(cur, data);
+  const defReps = getSetDefaultReps(cur, targetReps);
+  const repWord = cur.repMode === 'sec' ? 'sec' : 'reps';
+  const repLabel = cur.repMode === 'sec' ? 'Sec' : 'Reps';
   const workSets = getWorkSetsCount(cur.sets);
   const isFirst = cur.sets.length === 0;
   const doneCount = wo.queue.filter(e => e.done || e.skipped).length;
@@ -1522,7 +1568,7 @@ function renderWorkout() {
         <button class="wo-unit-btn" onclick="toggleWorkoutUnit()">${currentUnit.toUpperCase()}</button>
         <button class="wo-perside-btn${cur.perSide ? ' active' : ''}" onclick="toggleWorkoutPerSide()">L/R</button>
       </div>
-      <div class="wo-ex-meta">${escapeHtml(cur.target)}${defWeight ? ' · last: ' + defWeight + currentUnit : ''}</div>
+      <div class="wo-ex-meta">${escapeHtml(cur.target)}${bestWeight ? ' · best: ' + weightUnitLabel(bestWeight, currentUnit) : ''}</div>
       ${cur.note ? '<div class="wo-ex-note">' + escapeHtml(cur.note) + '</div>' : ''}
     </div>`;
 
@@ -1536,15 +1582,15 @@ function renderWorkout() {
       if (s.weightR !== undefined) {
         html += `<div class="wo-logged-set" data-idx="${si}">
           <span class="${numClass}">${numLabel}</span>
-          <span class="wo-set-detail">L: ${displayWeight(s.weight)}${currentUnit}×${s.reps} R: ${displayWeight(s.weightR)}${currentUnit}×${s.repsR}</span>
+          <span class="wo-set-detail">L: ${weightUnitLabel(displayWeight(s.weight), currentUnit)}×${s.reps} R: ${weightUnitLabel(displayWeight(s.weightR), currentUnit)}×${s.repsR}</span>
           <span></span>
           <button class="wo-del-set" onclick="deleteWorkoutSet(${si})" aria-label="Delete set">✕</button>
         </div>`;
       } else {
         html += `<div class="wo-logged-set" data-idx="${si}">
           <span class="${numClass}">${numLabel}</span>
-          <span class="wo-set-detail">${displayWeight(s.weight)}${currentUnit}</span>
-          <span class="wo-set-detail">${s.reps} reps</span>
+          <span class="wo-set-detail">${weightUnitLabel(displayWeight(s.weight), currentUnit)}</span>
+          <span class="wo-set-detail">${s.reps} ${repWord}</span>
           <button class="wo-del-set" onclick="deleteWorkoutSet(${si})" aria-label="Delete set">✕</button>
         </div>`;
       }
@@ -1559,20 +1605,20 @@ function renderWorkout() {
       <div class="wo-set-entry-label">${setLabel}</div>`;
 
     if (cur.perSide) {
-      html += `<div class="wo-input-label" style="grid-template-columns:auto 1fr 1fr;display:grid;gap:6px"><span></span><span>Weight (${currentUnit})</span><span>Reps</span></div>
+      html += `<div class="wo-input-label" style="grid-template-columns:auto 1fr 1fr;display:grid;gap:6px"><span></span><span>Weight (${currentUnit})</span><span>${repLabel}</span></div>
       <div class="wo-perside-grid">
         <span class="wo-side-lbl">L</span>
         <input type="number" id="wo-weight" value="${defWeight}" inputmode="decimal" placeholder="${currentUnit}" min="0" step="0.5">
-        <input type="number" id="wo-reps" value="${targetReps}" inputmode="numeric" placeholder="reps" min="0">
+        <input type="number" id="wo-reps" value="${defReps.reps}" inputmode="numeric" placeholder="${repWord}" min="0">
         <span class="wo-side-lbl">R</span>
         <input type="number" id="wo-weight-r" value="${defWeight}" inputmode="decimal" placeholder="${currentUnit}" min="0" step="0.5">
-        <input type="number" id="wo-reps-r" value="${targetReps}" inputmode="numeric" placeholder="reps" min="0">
+        <input type="number" id="wo-reps-r" value="${defReps.repsR}" inputmode="numeric" placeholder="${repWord}" min="0">
       </div>`;
     } else {
-      html += `<div class="wo-input-label"><span>Weight (${currentUnit})</span><span>Reps</span></div>
+      html += `<div class="wo-input-label"><span>Weight (${currentUnit})</span><span>${repLabel}</span></div>
       <div class="wo-set-entry-row">
         <input type="number" id="wo-weight" value="${defWeight}" inputmode="decimal" placeholder="${currentUnit}" min="0" step="0.5">
-        <input type="number" id="wo-reps" value="${targetReps}" inputmode="numeric" placeholder="reps" min="0">
+        <input type="number" id="wo-reps" value="${defReps.reps}" inputmode="numeric" placeholder="${repWord}" min="0">
       </div>`;
     }
 
@@ -1650,7 +1696,6 @@ function deleteWorkoutSet(idx) {
   const wo = getWo();
   if (!wo) return;
   wo.queue[wo.currentIdx].sets.splice(idx, 1);
-  saveWorkoutProgress();
   renderWorkout();
 }
 
@@ -1862,14 +1907,12 @@ function editPrevSet(exIdx, setIdx, field, value) {
   } else if (field === 'reps') {
     set.reps = value;
   }
-  saveWorkoutProgress();
 }
 
 function deletePrevSet(exIdx, setIdx) {
   const wo = getWo();
   if (!wo) return;
   wo.queue[exIdx].sets.splice(setIdx, 1);
-  saveWorkoutProgress();
   renderPrevExercises();
 }
 
@@ -1881,7 +1924,6 @@ function addPrevSet(exIdx) {
   const weight = lastSet ? lastSet.weight : '0';
   const reps = lastSet ? lastSet.reps : '0';
   ex.sets.push({ weight, reps, warmup: false });
-  saveWorkoutProgress();
   renderPrevExercises();
 }
 
@@ -1891,7 +1933,6 @@ function togglePrevWarmup(exIdx) {
   const ex = wo.queue[exIdx];
   if (!ex.sets.length) return;
   ex.sets[0].warmup = !ex.sets[0].warmup;
-  saveWorkoutProgress();
   renderPrevExercises();
 }
 
@@ -1907,7 +1948,6 @@ function removePrevExercise(exIdx) {
   if (exIdx < wo.currentIdx) wo.currentIdx--;
   if (exIdx <= wo.viewIdx) wo.viewIdx--;
   wo.editingPrevIdx = null;
-  saveWorkoutProgress();
   if (wo.viewIdx < 0) {
     wo.viewMode = null;
     wo.viewIdx = null;
@@ -1943,7 +1983,6 @@ function logWorkoutSet() {
   }
 
   cur.sets.push(entry);
-  saveWorkoutProgress();
   renderWorkout();
 }
 
@@ -2094,7 +2133,8 @@ function showWorkoutSummaryModal() {
     nonWarmup.forEach(s => {
       totalVol += (parseFloat(s.weight) || 0) * (parseInt(s.reps) || 0);
     });
-    const setsStr = ex.sets.map(s => `${s.weight || '?'}kg × ${s.reps || '?'}`).join(', ');
+    const repWord = ex.repMode === 'sec' ? 'sec' : 'reps';
+    const setsStr = ex.sets.map(s => `${s.weight ? weightUnitLabel(s.weight, 'kg') : '?kg'} × ${s.reps || '?'} ${repWord}`).join(', ');
     exercisesDone.push({ name: ex.name, setsStr, count: ex.sets.length });
   });
 
@@ -2298,12 +2338,13 @@ function renderCalendarDetail(data) {
       let exHTML = '';
       (session.exercises || []).forEach(ex => {
         const u = getUnitForExercise(ex.name);
+        const repWord = getExerciseRepMode(prof.key, ex.name) === 'sec' ? 'sec' : 'reps';
         let setsHTML = '';
         (ex.sets || []).forEach((s, i) => {
-          const wDisplay = s.weight ? (u === 'lb' ? escapeHtml(String(kgToLb(parseFloat(s.weight)))) + 'lb' : escapeHtml(s.weight) + 'kg') : '—';
+          const wDisplay = s.weight ? weightUnitLabel(u === 'lb' ? String(kgToLb(parseFloat(s.weight))) : escapeHtml(s.weight), u) : '—';
           setsHTML += `<div class="hs-set">
             <span class="hs-set-num">S${i+1}</span>
-            <span>${wDisplay} × ${s.reps ? escapeHtml(String(s.reps)) : '—'} reps</span>
+            <span>${wDisplay} × ${s.reps ? escapeHtml(String(s.reps)) : '—'} ${repWord}</span>
             ${s.note ? `<span class="hs-note">${escapeHtml(s.note)}</span>` : ''}
           </div>`;
         });
@@ -2420,6 +2461,7 @@ function renderCalLogForm() {
 
   day.exercises.forEach((ex, ei) => {
     const unit = getUnitForExercise(ex.name);
+    const repWord = ex.repMode === 'sec' ? 'sec' : 'reps';
     const sets = calLogMode.sets[ei] || [];
     html += `<div class="cal-log-ex">
       <div class="cal-log-ex-name">${escapeHtml(ex.name)}</div>
@@ -2429,7 +2471,7 @@ function renderCalLogForm() {
         <span class="cal-log-set-num">${si + 1}</span>
         <input type="number" value="${s.weight}" inputmode="decimal" placeholder="${unit}" onchange="updateCalLogSet(${ei},${si},'weight',this.value)">
         <span style="color:var(--dim);font-size:11px">×</span>
-        <input type="number" value="${s.reps}" inputmode="numeric" placeholder="reps" onchange="updateCalLogSet(${ei},${si},'reps',this.value)">
+        <input type="number" value="${s.reps}" inputmode="numeric" placeholder="${repWord}" onchange="updateCalLogSet(${ei},${si},'reps',this.value)">
       </div>`;
     });
     html += `<button class="cal-log-add-set" onclick="addCalLogSet(${ei})">+ Add set</button>`;
@@ -3134,6 +3176,7 @@ function renderRoutineEditor() {
           <div style="display:flex;gap:4px">
             <input class="re-ex-input target" value="${escapeAttr(ex.target)}" onchange="updateRoutineExercise('${profile}',${di},${ei},'target',this.value)" placeholder="Sets × Reps">
             <input class="re-ex-input" value="${escapeAttr(ex.note||'')}" onchange="updateRoutineExercise('${profile}',${di},${ei},'note',this.value)" placeholder="Note" style="flex:1">
+            <button class="re-mode-btn${ex.repMode === 'sec' ? ' active' : ''}" onclick="toggleRoutineExerciseMode('${profile}',${di},${ei})" title="Toggle reps/seconds display">${ex.repMode === 'sec' ? 'SEC' : 'REPS'}</button>
           </div>
         </div>
         <button class="re-ex-del" onclick="removeRoutineExercise('${profile}',${di},${ei})">✕</button>
@@ -3152,6 +3195,13 @@ function renderRoutineEditor() {
 function updateRoutineExercise(profile, dayIdx, exIdx, field, value) {
   ROUTINES[profile][dayIdx].exercises[exIdx][field] = value;
   saveRoutines(ROUTINES);
+}
+
+function toggleRoutineExerciseMode(profile, dayIdx, exIdx) {
+  const ex = ROUTINES[profile][dayIdx].exercises[exIdx];
+  ex.repMode = ex.repMode === 'sec' ? 'reps' : 'sec';
+  saveRoutines(ROUTINES);
+  renderRoutineEditor();
 }
 
 function removeRoutineExercise(profile, dayIdx, exIdx) {
