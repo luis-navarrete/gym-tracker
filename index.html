@@ -379,6 +379,11 @@ html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--tex
 }
 .re-ex-input:focus { outline:none; border-color:var(--accent); }
 .re-ex-input.target { width:80px; text-align:center; }
+.re-ex-select {
+  background:var(--s2); border:1px solid var(--border); border-radius:var(--radius);
+  color:var(--text); font-family:var(--font); font-size:12px; padding:5px 8px; width:100%;
+}
+.re-ex-select:focus { outline:none; border-color:var(--accent); }
 .re-ex-del {
   background:none; border:none; color:var(--dim); cursor:pointer; font-size:14px; padding:2px;
 }
@@ -1153,13 +1158,75 @@ function saveRoutines(routines) {
 let ROUTINES = loadRoutines();
 
 // ─────────────────────────────────────────
+// EXERCISE CATALOG — stable IDs backing every exercise
+// ─────────────────────────────────────────
+const EXERCISE_CATALOG_KEY = 'gymtracker_exercise_catalog';
+
+function genExerciseId() {
+  return 'ex_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+}
+function loadExerciseCatalog() {
+  try {
+    const c = JSON.parse(localStorage.getItem(EXERCISE_CATALOG_KEY));
+    if (c && typeof c === 'object') return c;
+  } catch {}
+  return {};
+}
+function saveExerciseCatalog(cat) {
+  localStorage.setItem(EXERCISE_CATALOG_KEY, JSON.stringify(cat));
+}
+function findCatalogIdByName(catalog, name) {
+  const norm = name.trim().toLowerCase();
+  for (const id in catalog) {
+    if (catalog[id].trim().toLowerCase() === norm) return id;
+  }
+  return null;
+}
+// Backfills an `id` on every routine exercise, reusing a matching catalog
+// entry by name when one exists, else minting a new one. Runs once at
+// startup (and after a routine reset) so every exercise — old or new —
+// ends up with a stable identity independent of its display name.
+function ensureExerciseIds() {
+  const catalog = loadExerciseCatalog();
+  let changed = false;
+  ['luis', 'her'].forEach(profile => {
+    (ROUTINES[profile] || []).forEach(day => {
+      (day.exercises || []).forEach(ex => {
+        if (!ex.id) {
+          let id = findCatalogIdByName(catalog, ex.name);
+          if (!id) { id = genExerciseId(); catalog[id] = ex.name; changed = true; }
+          ex.id = id;
+          changed = true;
+        } else if (!catalog[ex.id]) {
+          catalog[ex.id] = ex.name;
+          changed = true;
+        }
+      });
+    });
+  });
+  if (changed) {
+    saveExerciseCatalog(catalog);
+    saveRoutines(ROUTINES);
+  }
+  return catalog;
+}
+let EXERCISE_CATALOG = ensureExerciseIds();
+// Matches a saved session's exercise entry against a routine exercise:
+// prefer the stable id when both sides have one (survives renames),
+// otherwise fall back to name matching for pre-catalog history.
+function sessionExMatches(sessionEx, exName, exId) {
+  if (exId && sessionEx.exId) return sessionEx.exId === exId;
+  return sessionEx.name === exName;
+}
+
+// ─────────────────────────────────────────
 // STATE
 // ─────────────────────────────────────────
 let currentProfile = 'luis';
 let currentPage = 'today';
 let chartInstance = null;
 let confirmCallback = null;
-let allExerciseNames = [];
+let allExerciseList = []; // [{id, name}] for the progress picker
 let currentUnit = 'kg';
 let calViewDate = new Date();
 let calSelectedDate = null;
@@ -1188,10 +1255,10 @@ function getUnitForExercise(exName) {
   const prefs = loadUnitPrefs();
   return (prefs[currentProfile] && prefs[currentProfile][exName]) || 'kg';
 }
-function getExerciseRepMode(profile, exName) {
+function getExerciseRepMode(profile, exId, exName) {
   const routine = ROUTINES[profile] || [];
   for (const day of routine) {
-    const ex = (day.exercises || []).find(e => e.name === exName);
+    const ex = (day.exercises || []).find(e => (exId && e.id === exId) || e.name === exName);
     if (ex) return ex.repMode === 'sec' ? 'sec' : 'reps';
   }
   return 'reps';
@@ -1291,27 +1358,27 @@ function parseTargetReps(target) {
 function isPerSideExercise(target) {
   return /\/(side|leg|arm)/i.test(target);
 }
-function getLastSessionSets(data, profile, exName) {
+function getLastSessionSets(data, profile, exName, exId) {
   const sessions = (data[profile] || []).slice().sort((a,b) => b.date.localeCompare(a.date));
   for (const session of sessions) {
-    const ex = (session.exercises || []).find(e => e.name === exName);
+    const ex = (session.exercises || []).find(e => sessionExMatches(e, exName, exId));
     if (ex && ex.sets && ex.sets.length) return ex.sets;
   }
   return null;
 }
-function getLastWeight(data, profile, exName) {
-  const sets = getLastSessionSets(data, profile, exName);
+function getLastWeight(data, profile, exName, exId) {
+  const sets = getLastSessionSets(data, profile, exName, exId);
   if (!sets || !sets.length) return '';
   const workSets = sets.filter(s => s.note !== 'warm-up');
   if (workSets.length) return workSets[0].weight || '';
   return sets[0].weight || '';
 }
-function getBestWeight(data, profile, exName) {
+function getBestWeight(data, profile, exName, exId) {
   const sessions = (data[profile] || []);
   let best = 0;
   sessions.forEach(s => {
     (s.exercises || []).forEach(ex => {
-      if (ex.name === exName) {
+      if (sessionExMatches(ex, exName, exId)) {
         (ex.sets || []).forEach(set => {
           if (set.note !== 'warm-up') {
             const w = parseFloat(set.weight) || 0;
@@ -1396,8 +1463,8 @@ function renderToday() {
   const data = loadData();
   let html = '<div class="overview-list">';
   dayData.exercises.forEach(ex => {
-    const lastW = getLastWeight(data, currentProfile, ex.name);
-    const unit = getUnitForExercise(ex.name);
+    const lastW = getLastWeight(data, currentProfile, ex.name, ex.id);
+    const unit = getUnitForExercise(ex.id || ex.name);
     const wStr = lastW ? weightUnitLabel(unit === 'lb' ? String(kgToLb(parseFloat(lastW))) : lastW, unit) : '';
     html += `<div class="overview-ex">
       <div><div class="overview-ex-name">${escapeHtml(ex.name)}</div>
@@ -1455,7 +1522,7 @@ function startWorkout() {
     startTime: Date.now(),
     timerInterval: null,
     queue: dayData.exercises.map((ex, i) => ({
-      exIdx: i, name: ex.name, target: ex.target, note: ex.note || '',
+      exIdx: i, id: ex.id, name: ex.name, target: ex.target, note: ex.note || '',
       repMode: ex.repMode === 'sec' ? 'sec' : 'reps',
       perSide: isPerSideExercise(ex.target),
       sets: [], done: false, skipped: false
@@ -1497,7 +1564,7 @@ function getWorkSetsCount(sets) {
 function getSetDefaultWeight(wo, cur, data) {
   const workSets = cur.sets.filter(s => !s.warmup);
   if (workSets.length === 0) {
-    const bestW = getBestWeight(data, currentProfile, cur.name);
+    const bestW = getBestWeight(data, currentProfile, cur.name, cur.id);
     return bestW ? displayWeight(bestW) : '';
   }
   const last = workSets[workSets.length - 1];
@@ -1505,7 +1572,7 @@ function getSetDefaultWeight(wo, cur, data) {
 }
 
 function getBestWeightSoFar(cur, data) {
-  const historicalBest = parseFloat(getBestWeight(data, currentProfile, cur.name)) || 0;
+  const historicalBest = parseFloat(getBestWeight(data, currentProfile, cur.name, cur.id)) || 0;
   const sessionBest = cur.sets.filter(s => !s.warmup).reduce((max, s) => {
     const w = parseFloat(s.weight) || 0;
     return w > max ? w : max;
@@ -1539,7 +1606,7 @@ function renderWorkout() {
   if (!cur) { finishWorkout(); return; }
 
   const data = loadData();
-  currentUnit = getUnitForExercise(cur.name);
+  currentUnit = getUnitForExercise(cur.id || cur.name);
   const targetSets = parseTargetSets(cur.target) || 3;
   const targetReps = parseTargetReps(cur.target);
   const defWeight = getSetDefaultWeight(wo, cur, data);
@@ -1672,9 +1739,9 @@ function toggleWorkoutUnit() {
   const wo = getWo();
   if (!wo) return;
   const cur = wo.queue[wo.currentIdx];
-  const curU = getUnitForExercise(cur.name);
+  const curU = getUnitForExercise(cur.id || cur.name);
   const newU = curU === 'kg' ? 'lb' : 'kg';
-  saveUnitPref(cur.name, newU);
+  saveUnitPref(cur.id || cur.name, newU);
   renderWorkout();
 }
 
@@ -1817,7 +1884,7 @@ function renderPrevExercises() {
     if (!ex.done && !ex.skipped) continue;
     hasAny = true;
     const editing = wo.editingPrevIdx === i;
-    currentUnit = getUnitForExercise(ex.name);
+    currentUnit = getUnitForExercise(ex.id || ex.name);
     const badgeText = ex.skipped ? 'Skipped' : (getWorkSetsCount(ex.sets) + ' sets');
     const badgeStyle = ex.skipped ? 'color:var(--dim)' : '';
 
@@ -2107,8 +2174,9 @@ function saveWorkoutProgress() {
     if (existing) {
       existing.sets = sets;
       existing.name = ex.name;
+      existing.exId = ex.id;
     } else {
-      session.exercises.push({ exIdx: ex.exIdx, name: ex.name, sets });
+      session.exercises.push({ exIdx: ex.exIdx, exId: ex.id, name: ex.name, sets });
     }
   });
 
@@ -2337,8 +2405,8 @@ function renderCalendarDetail(data) {
     sessions.forEach(session => {
       let exHTML = '';
       (session.exercises || []).forEach(ex => {
-        const u = getUnitForExercise(ex.name);
-        const repWord = getExerciseRepMode(prof.key, ex.name) === 'sec' ? 'sec' : 'reps';
+        const u = getUnitForExercise(ex.exId || ex.name);
+        const repWord = getExerciseRepMode(prof.key, ex.exId, ex.name) === 'sec' ? 'sec' : 'reps';
         let setsHTML = '';
         (ex.sets || []).forEach((s, i) => {
           const wDisplay = s.weight ? weightUnitLabel(u === 'lb' ? String(kgToLb(parseFloat(s.weight))) : escapeHtml(s.weight), u) : '—';
@@ -2435,9 +2503,9 @@ function initCalLogSets(dayIdx) {
   day.exercises.forEach((ex, ei) => {
     const targetMatch = ex.target.match(/^(\d+)/);
     const numSets = targetMatch ? parseInt(targetMatch[1]) : 3;
-    const unit = getUnitForExercise(ex.name);
+    const unit = getUnitForExercise(ex.id || ex.name);
     const data = loadData();
-    const lastW = getLastWeight(data, currentProfile, ex.name);
+    const lastW = getLastWeight(data, currentProfile, ex.name, ex.id);
     const defW = lastW ? (unit === 'lb' ? String(kgToLb(parseFloat(lastW))) : lastW) : '';
     calLogMode.sets[ei] = [];
     for (let s = 0; s < numSets; s++) {
@@ -2460,7 +2528,7 @@ function renderCalLogForm() {
   html += '</select></div>';
 
   day.exercises.forEach((ex, ei) => {
-    const unit = getUnitForExercise(ex.name);
+    const unit = getUnitForExercise(ex.id || ex.name);
     const repWord = ex.repMode === 'sec' ? 'sec' : 'reps';
     const sets = calLogMode.sets[ei] || [];
     html += `<div class="cal-log-ex">
@@ -2522,9 +2590,10 @@ function saveCalLog() {
   day.exercises.forEach((ex, ei) => {
     const sets = (calLogMode.sets[ei] || []).filter(s => s.weight || s.reps);
     if (!sets.length) return;
-    const unit = getUnitForExercise(ex.name);
+    const unit = getUnitForExercise(ex.id || ex.name);
     exercises.push({
       exIdx: ei,
+      exId: ex.id,
       name: ex.name,
       sets: sets.map(s => ({
         weight: unit === 'lb' ? String(lbToKg(parseFloat(s.weight) || 0)) : (s.weight || '0'),
@@ -2863,9 +2932,9 @@ function populateProgressPicker() {
   const picker = document.getElementById('progress-picker');
   const current = picker.value;
   const exercises = getAllExercises(currentProfile);
-  allExerciseNames = exercises;
-  picker.innerHTML = exercises.map(e => `<option value="${escapeAttr(e)}">${escapeHtml(e)}</option>`).join('');
-  if (current && exercises.includes(current)) picker.value = current;
+  allExerciseList = exercises;
+  picker.innerHTML = exercises.map(e => `<option value="${escapeAttr(e.id)}">${escapeHtml(e.name)}</option>`).join('');
+  if (current && exercises.some(e => e.id === current)) picker.value = current;
   document.getElementById('progress-search').value = '';
 }
 
@@ -2874,30 +2943,32 @@ function filterProgressPicker() {
   const picker = document.getElementById('progress-picker');
   const current = picker.value;
   const filtered = query
-    ? allExerciseNames.filter(e => e.toLowerCase().includes(query))
-    : allExerciseNames;
+    ? allExerciseList.filter(e => e.name.toLowerCase().includes(query))
+    : allExerciseList;
 
-  picker.innerHTML = filtered.map(e => `<option value="${escapeAttr(e)}">${escapeHtml(e)}</option>`).join('');
+  picker.innerHTML = filtered.map(e => `<option value="${escapeAttr(e.id)}">${escapeHtml(e.name)}</option>`).join('');
 
-  if (filtered.includes(current)) {
+  if (filtered.some(e => e.id === current)) {
     picker.value = current;
   } else if (filtered.length > 0) {
-    picker.value = filtered[0];
+    picker.value = filtered[0].id;
     renderProgress();
   }
 }
 
 function getAllExercises(profile) {
-  const set = new Set();
-  ROUTINES[profile].forEach(day => day.exercises.forEach(ex => set.add(ex.name)));
-  return [...set];
+  const map = new Map();
+  (ROUTINES[profile] || []).forEach(day => (day.exercises || []).forEach(ex => {
+    if (!map.has(ex.id)) map.set(ex.id, { id: ex.id, name: ex.name });
+  }));
+  return [...map.values()];
 }
 
-function getBestLog(data, profile, exName) {
+function getBestLog(data, profile, exName, exId) {
   let best = null;
   (data[profile] || []).forEach(session => {
     (session.exercises || []).forEach(ex => {
-      if (ex.name !== exName) return;
+      if (!sessionExMatches(ex, exName, exId)) return;
       (ex.sets || []).forEach(s => {
         const w = parseFloat(s.weight) || 0;
         if (!best || w > parseFloat(best.weight)) best = s;
@@ -2909,8 +2980,10 @@ function getBestLog(data, profile, exName) {
 
 function renderProgress() {
   const picker = document.getElementById('progress-picker');
-  const exName = picker.value;
-  if (!exName) return;
+  const exId = picker.value;
+  if (!exId) return;
+  const selected = allExerciseList.find(e => e.id === exId);
+  const exName = selected ? selected.name : '';
 
   const data = loadData();
   const sessions = (data[currentProfile] || []).slice().sort((a,b) => a.date.localeCompare(b.date));
@@ -2919,7 +2992,7 @@ function renderProgress() {
   let totalSets = 0, totalVol = 0, maxWeight = 0;
 
   sessions.forEach(session => {
-    const ex = (session.exercises || []).find(e => e.name === exName);
+    const ex = (session.exercises || []).find(e => sessionExMatches(e, exName, exId));
     if (!ex) return;
     let best = 0;
     (ex.sets || []).forEach(s => {
@@ -3140,6 +3213,17 @@ function confirmClearData() {
 // ROUTINE EDITOR
 // ─────────────────────────────────────────
 let routineEditorOpen = false;
+// While set, the named exercise row shows a plain text input (instead of
+// the catalog select) so the user can type a name for a new/relinked
+// exercise. Cleared once that name is committed or abandoned.
+let reNewExerciseSlot = null;
+
+function catalogOptionsHtml(selectedId) {
+  const entries = Object.entries(EXERCISE_CATALOG).sort((a, b) => a[1].localeCompare(b[1]));
+  return entries.map(([id, name]) =>
+    `<option value="${id}" ${id === selectedId ? 'selected' : ''}>${escapeHtml(name)}</option>`
+  ).join('');
+}
 
 function renderRoutineEditor() {
   const container = document.getElementById('routine-editor');
@@ -3169,10 +3253,19 @@ function renderRoutineEditor() {
         <span class="re-day-label">${escapeHtml(day.day)} — ${escapeHtml(day.title)}</span>
       </div>`;
     day.exercises.forEach((ex, ei) => {
+      const isNaming = !ex.id || (reNewExerciseSlot && reNewExerciseSlot.profile === profile && reNewExerciseSlot.dayIdx === di && reNewExerciseSlot.exIdx === ei);
+      const nameFieldHtml = isNaming
+        ? `<input class="re-ex-input" value="" placeholder="Type exercise name…" autofocus
+             onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}"
+             onblur="commitRoutineExerciseName('${profile}',${di},${ei},this.value)">`
+        : `<select class="re-ex-select" onchange="handleRoutineExercisePick('${profile}',${di},${ei},this.value)">
+             ${catalogOptionsHtml(ex.id)}
+             <option value="__new__">+ Add new exercise…</option>
+           </select>`;
       html += `<div class="re-ex">
         <span class="re-ex-drag">⠿</span>
         <div class="re-ex-inputs">
-          <input class="re-ex-input" value="${escapeAttr(ex.name)}" onchange="updateRoutineExercise('${profile}',${di},${ei},'name',this.value)" placeholder="Exercise name">
+          ${nameFieldHtml}
           <div style="display:flex;gap:4px">
             <input class="re-ex-input target" value="${escapeAttr(ex.target)}" onchange="updateRoutineExercise('${profile}',${di},${ei},'target',this.value)" placeholder="Sets × Reps">
             <input class="re-ex-input" value="${escapeAttr(ex.note||'')}" onchange="updateRoutineExercise('${profile}',${di},${ei},'note',this.value)" placeholder="Note" style="flex:1">
@@ -3190,6 +3283,52 @@ function renderRoutineEditor() {
   html += '</div>';
 
   container.innerHTML = html;
+}
+
+// Links this routine slot to an existing catalog exercise, or — if
+// "+ Add new exercise…" was picked — switches the row into naming mode.
+function handleRoutineExercisePick(profile, dayIdx, exIdx, value) {
+  if (value === '__new__') {
+    reNewExerciseSlot = { profile, dayIdx, exIdx };
+    renderRoutineEditor();
+    return;
+  }
+  const ex = ROUTINES[profile][dayIdx].exercises[exIdx];
+  ex.id = value;
+  ex.name = EXERCISE_CATALOG[value] || ex.name;
+  saveRoutines(ROUTINES);
+  renderRoutineEditor();
+}
+
+// Commits a typed exercise name: reuses a matching catalog entry (by
+// name, case/whitespace-insensitive) or mints a brand new id for it.
+// An empty name on a never-linked row removes the placeholder row;
+// an empty name on an already-linked row just cancels the relink.
+function commitRoutineExerciseName(profile, dayIdx, exIdx, typedName) {
+  const name = (typedName || '').trim();
+  const ex = ROUTINES[profile][dayIdx].exercises[exIdx];
+  const wasUnlinked = !ex.id;
+  reNewExerciseSlot = null;
+
+  if (!name) {
+    if (wasUnlinked) {
+      ROUTINES[profile][dayIdx].exercises.splice(exIdx, 1);
+      saveRoutines(ROUTINES);
+    }
+    renderRoutineEditor();
+    return;
+  }
+
+  let id = findCatalogIdByName(EXERCISE_CATALOG, name);
+  if (!id) {
+    id = genExerciseId();
+    EXERCISE_CATALOG[id] = name;
+    saveExerciseCatalog(EXERCISE_CATALOG);
+  }
+  ex.id = id;
+  ex.name = EXERCISE_CATALOG[id];
+  saveRoutines(ROUTINES);
+  renderRoutineEditor();
 }
 
 function updateRoutineExercise(profile, dayIdx, exIdx, field, value) {
@@ -3211,15 +3350,17 @@ function removeRoutineExercise(profile, dayIdx, exIdx) {
 }
 
 function addRoutineExercise(profile, dayIdx) {
-  ROUTINES[profile][dayIdx].exercises.push({ name: 'New Exercise', target: '3 × 10', note: '' });
+  const exIdx = ROUTINES[profile][dayIdx].exercises.length;
+  ROUTINES[profile][dayIdx].exercises.push({ id: null, name: '', target: '3 × 10', note: '' });
   saveRoutines(ROUTINES);
+  reNewExerciseSlot = { profile, dayIdx, exIdx };
   renderRoutineEditor();
 }
 
 function resetRoutinesToDefault() {
   showConfirm('Reset Routines', 'This will reset all routines to their defaults. Custom exercises will be lost.', 'Reset', () => {
     ROUTINES = JSON.parse(JSON.stringify(DEFAULT_ROUTINES));
-    saveRoutines(ROUTINES);
+    EXERCISE_CATALOG = ensureExerciseIds();
     renderRoutineEditor();
     showToast('Routines reset');
   });
