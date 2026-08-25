@@ -752,6 +752,34 @@ canvas#bodyChart { width:100% !important; }
 @media (min-width:768px) { .wo-summary-sheet { max-width:600px; } }
 @media (min-width:1024px) { .wo-summary-sheet { max-width:720px; } }
 
+/* ── LOG ROUTINE MODAL ── */
+#cal-log-modal {
+  position:fixed; inset:0; z-index:260;
+  background:rgba(0,0,0,0.85); backdrop-filter:blur(4px);
+  display:none; align-items:flex-end; justify-content:center;
+}
+#cal-log-modal.open { display:flex; }
+.cal-log-sheet {
+  width:100%; max-width:480px; max-height:88vh; overflow-y:auto;
+  background:var(--s1); border-radius:12px 12px 0 0;
+  border-top:1px solid var(--border2);
+}
+@media (min-width:768px) { .cal-log-sheet { max-width:600px; } }
+@media (min-width:1024px) { .cal-log-sheet { max-width:720px; } }
+.cal-log-modal-head {
+  display:flex; align-items:center; justify-content:space-between;
+  padding:14px 16px; border-bottom:1px solid var(--border);
+}
+.cal-log-modal-title { font-size:15px; font-weight:700; }
+.cal-log-modal-close {
+  background:none; border:none; color:var(--muted); cursor:pointer;
+  font-size:22px; line-height:1; padding:0 4px;
+}
+.cal-log-ex-head { display:flex; align-items:flex-start; justify-content:space-between; gap:8px; }
+.cal-log-ex-toggles { display:flex; gap:6px; flex-shrink:0; }
+.cal-log-set-row.perside { flex-wrap:wrap; }
+.cal-log-side-lbl { font-size:11px; font-weight:700; color:var(--muted); }
+
 /* prev exercise compact rows */
 .wo-prev-ex-row {
   display:flex; align-items:center; gap:8px;
@@ -1008,6 +1036,13 @@ canvas#bodyChart { width:100% !important; }
 <div id="workout-summary-modal">
   <div class="wo-summary-sheet">
     <div id="workout-summary-content"></div>
+  </div>
+</div>
+
+<!-- LOG ROUTINE MODAL -->
+<div id="cal-log-modal">
+  <div class="cal-log-sheet">
+    <div id="cal-log-modal-content"></div>
   </div>
 </div>
 
@@ -2450,10 +2485,6 @@ function renderCalendarDetail(data) {
     }
   }
 
-  if (calLogMode && calLogMode.date === calSelectedDate) {
-    html += renderCalLogForm();
-  }
-
   if (!html) { container.innerHTML = '<div class="history-empty" style="padding:24px 16px">Tap a day to see details or log a routine.</div>'; }
   else { container.innerHTML = html; }
 
@@ -2462,9 +2493,6 @@ function renderCalendarDetail(data) {
       e.stopPropagation();
       deleteSession(this.dataset.profile, this.dataset.date, parseInt(this.dataset.dayidx));
     });
-  });
-  container.querySelectorAll('.cal-log-set-row input').forEach(inp => {
-    inp.addEventListener('focus', function() { this.select(); });
   });
 }
 
@@ -2488,11 +2516,28 @@ function startCalLogRoutine() {
   calLogMode = {
     date: calSelectedDate,
     dayIdx: 0,
-    sets: {}
+    sets: {},
+    perSide: {}
   };
   initCalLogSets(0);
-  const data = loadData();
-  renderCalendarDetail(data);
+  openCalLogModal();
+}
+
+function openCalLogModal() {
+  renderCalLogModalContent();
+  document.getElementById('cal-log-modal').classList.add('open');
+}
+
+function closeCalLogModal() {
+  document.getElementById('cal-log-modal').classList.remove('open');
+}
+
+function convertDisplayWeight(val, fromUnit, toUnit) {
+  if (val === '' || val === undefined || val === null) return val;
+  const v = parseFloat(val);
+  if (isNaN(v)) return val;
+  if (fromUnit === toUnit) return val;
+  return fromUnit === 'kg' ? String(kgToLb(v)) : String(lbToKg(v));
 }
 
 function initCalLogSets(dayIdx) {
@@ -2500,47 +2545,79 @@ function initCalLogSets(dayIdx) {
   const day = routine[dayIdx];
   calLogMode.dayIdx = dayIdx;
   calLogMode.sets = {};
+  calLogMode.perSide = {};
+  const data = loadData();
   day.exercises.forEach((ex, ei) => {
     const targetMatch = ex.target.match(/^(\d+)/);
     const numSets = targetMatch ? parseInt(targetMatch[1]) : 3;
     const unit = getUnitForExercise(ex.id || ex.name);
-    const data = loadData();
     const lastW = getLastWeight(data, currentProfile, ex.name, ex.id);
     const defW = lastW ? (unit === 'lb' ? String(kgToLb(parseFloat(lastW))) : lastW) : '';
+    calLogMode.perSide[ei] = isPerSideExercise(ex.target);
     calLogMode.sets[ei] = [];
     for (let s = 0; s < numSets; s++) {
-      calLogMode.sets[ei].push({ weight: defW, reps: '' });
+      calLogMode.sets[ei].push({ weight: defW, reps: '', weightR: defW, repsR: '', warmup: false });
     }
   });
 }
 
-function renderCalLogForm() {
+function renderCalLogModalContent() {
   const routine = ROUTINES[currentProfile];
-  if (!routine || !routine.length) return '';
+  if (!routine || !routine.length) return;
   const day = routine[calLogMode.dayIdx];
 
-  let html = '<div class="cal-detail">';
+  let html = `<div class="cal-log-modal-head">
+    <div class="cal-log-modal-title">Log Routine</div>
+    <button class="cal-log-modal-close" onclick="cancelCalLog()" aria-label="Close">×</button>
+  </div>`;
   html += `<div class="cal-log-picker">
     <select onchange="changeCalLogDay(this.value)">`;
   routine.forEach((r, i) => {
-    html += `<option value="${i}" ${i === calLogMode.dayIdx ? 'selected' : ''}>${r.label} — ${r.day}</option>`;
+    html += `<option value="${i}" ${i === calLogMode.dayIdx ? 'selected' : ''}>${escapeHtml(r.label)} — ${escapeHtml(r.day)}</option>`;
   });
   html += '</select></div>';
 
   day.exercises.forEach((ex, ei) => {
     const unit = getUnitForExercise(ex.id || ex.name);
     const repWord = ex.repMode === 'sec' ? 'sec' : 'reps';
+    const perSide = !!calLogMode.perSide[ei];
     const sets = calLogMode.sets[ei] || [];
     html += `<div class="cal-log-ex">
-      <div class="cal-log-ex-name">${escapeHtml(ex.name)}</div>
-      <div class="cal-log-ex-target">${escapeHtml(ex.target)}</div>`;
-    sets.forEach((s, si) => {
-      html += `<div class="cal-log-set-row">
-        <span class="cal-log-set-num">${si + 1}</span>
-        <input type="number" value="${s.weight}" inputmode="decimal" placeholder="${unit}" onchange="updateCalLogSet(${ei},${si},'weight',this.value)">
-        <span style="color:var(--dim);font-size:11px">×</span>
-        <input type="number" value="${s.reps}" inputmode="numeric" placeholder="${repWord}" onchange="updateCalLogSet(${ei},${si},'reps',this.value)">
+      <div class="cal-log-ex-head">
+        <div>
+          <div class="cal-log-ex-name">${escapeHtml(ex.name)}</div>
+          <div class="cal-log-ex-target">${escapeHtml(ex.target)}</div>
+        </div>
+        <div class="cal-log-ex-toggles">
+          <button class="wo-unit-btn" onclick="toggleCalLogUnit(${ei})">${unit.toUpperCase()}</button>
+          <button class="wo-perside-btn${perSide ? ' active' : ''}" onclick="toggleCalLogPerSide(${ei})">L/R</button>
+        </div>
       </div>`;
+    sets.forEach((s, si) => {
+      const isFirst = si === 0;
+      const warmupBtn = isFirst
+        ? `<button class="wo-warmup-toggle${s.warmup ? ' active' : ''}" onclick="toggleCalLogWarmup(${ei})">W</button>`
+        : '';
+      if (perSide) {
+        html += `<div class="cal-log-set-row perside">
+          <span class="cal-log-set-num">${si + 1}</span>
+          <span class="cal-log-side-lbl">L</span>
+          <input type="number" value="${s.weight}" inputmode="decimal" placeholder="${unit}" onchange="updateCalLogSet(${ei},${si},'weight',this.value)">
+          <input type="number" value="${s.reps}" inputmode="numeric" placeholder="${repWord}" onchange="updateCalLogSet(${ei},${si},'reps',this.value)">
+          <span class="cal-log-side-lbl">R</span>
+          <input type="number" value="${s.weightR}" inputmode="decimal" placeholder="${unit}" onchange="updateCalLogSet(${ei},${si},'weightR',this.value)">
+          <input type="number" value="${s.repsR}" inputmode="numeric" placeholder="${repWord}" onchange="updateCalLogSet(${ei},${si},'repsR',this.value)">
+          ${warmupBtn}
+        </div>`;
+      } else {
+        html += `<div class="cal-log-set-row">
+          <span class="cal-log-set-num">${si + 1}</span>
+          <input type="number" value="${s.weight}" inputmode="decimal" placeholder="${unit}" onchange="updateCalLogSet(${ei},${si},'weight',this.value)">
+          <span style="color:var(--dim);font-size:11px">×</span>
+          <input type="number" value="${s.reps}" inputmode="numeric" placeholder="${repWord}" onchange="updateCalLogSet(${ei},${si},'reps',this.value)">
+          ${warmupBtn}
+        </div>`;
+      }
     });
     html += `<button class="cal-log-add-set" onclick="addCalLogSet(${ei})">+ Add set</button>`;
     html += '</div>';
@@ -2549,14 +2626,18 @@ function renderCalLogForm() {
   html += `<div class="cal-log-actions">
     <button class="cal-log-cancel" onclick="cancelCalLog()">Cancel</button>
     <button class="cal-log-save" onclick="saveCalLog()">Save</button>
-  </div></div>`;
-  return html;
+  </div>`;
+
+  const content = document.getElementById('cal-log-modal-content');
+  content.innerHTML = html;
+  content.querySelectorAll('.cal-log-set-row input').forEach(inp => {
+    inp.addEventListener('focus', function() { this.select(); });
+  });
 }
 
 function changeCalLogDay(idx) {
   initCalLogSets(parseInt(idx));
-  const data = loadData();
-  renderCalendarDetail(data);
+  renderCalLogModalContent();
 }
 
 function updateCalLogSet(exIdx, setIdx, field, value) {
@@ -2567,16 +2648,42 @@ function updateCalLogSet(exIdx, setIdx, field, value) {
 function addCalLogSet(exIdx) {
   if (!calLogMode) return;
   const sets = calLogMode.sets[exIdx];
-  const last = sets.length ? sets[sets.length - 1] : { weight: '', reps: '' };
-  sets.push({ weight: last.weight, reps: last.reps });
-  const data = loadData();
-  renderCalendarDetail(data);
+  const last = sets.length ? sets[sets.length - 1] : { weight: '', reps: '', weightR: '', repsR: '' };
+  sets.push({ weight: last.weight, reps: last.reps, weightR: last.weightR || '', repsR: last.repsR || '', warmup: false });
+  renderCalLogModalContent();
+}
+
+function toggleCalLogUnit(exIdx) {
+  if (!calLogMode) return;
+  const ex = ROUTINES[currentProfile][calLogMode.dayIdx].exercises[exIdx];
+  const key = ex.id || ex.name;
+  const curU = getUnitForExercise(key);
+  const newU = curU === 'kg' ? 'lb' : 'kg';
+  (calLogMode.sets[exIdx] || []).forEach(s => {
+    s.weight = convertDisplayWeight(s.weight, curU, newU);
+    s.weightR = convertDisplayWeight(s.weightR, curU, newU);
+  });
+  saveUnitPref(key, newU);
+  renderCalLogModalContent();
+}
+
+function toggleCalLogPerSide(exIdx) {
+  if (!calLogMode) return;
+  calLogMode.perSide[exIdx] = !calLogMode.perSide[exIdx];
+  renderCalLogModalContent();
+}
+
+function toggleCalLogWarmup(exIdx) {
+  if (!calLogMode) return;
+  const sets = calLogMode.sets[exIdx];
+  if (!sets || !sets.length) return;
+  sets[0].warmup = !sets[0].warmup;
+  renderCalLogModalContent();
 }
 
 function cancelCalLog() {
   calLogMode = null;
-  const data = loadData();
-  renderCalendarDetail(data);
+  closeCalLogModal();
 }
 
 function saveCalLog() {
@@ -2588,18 +2695,26 @@ function saveCalLog() {
 
   const exercises = [];
   day.exercises.forEach((ex, ei) => {
-    const sets = (calLogMode.sets[ei] || []).filter(s => s.weight || s.reps);
-    if (!sets.length) return;
+    const perSide = !!calLogMode.perSide[ei];
+    const rawSets = (calLogMode.sets[ei] || []).filter(s => s.weight || s.reps || (perSide && (s.weightR || s.repsR)));
+    if (!rawSets.length) return;
     const unit = getUnitForExercise(ex.id || ex.name);
     exercises.push({
       exIdx: ei,
       exId: ex.id,
       name: ex.name,
-      sets: sets.map(s => ({
-        weight: unit === 'lb' ? String(lbToKg(parseFloat(s.weight) || 0)) : (s.weight || '0'),
-        reps: s.reps || '0',
-        note: ''
-      }))
+      sets: rawSets.map(s => {
+        const entry = {
+          weight: unit === 'lb' ? String(lbToKg(parseFloat(s.weight) || 0)) : (s.weight || '0'),
+          reps: s.reps || '0',
+          note: s.warmup ? 'warm-up' : ''
+        };
+        if (perSide) {
+          entry.weightR = unit === 'lb' ? String(lbToKg(parseFloat(s.weightR) || 0)) : (s.weightR || '0');
+          entry.repsR = s.repsR || '0';
+        }
+        return entry;
+      })
     });
   });
 
@@ -2615,6 +2730,7 @@ function saveCalLog() {
   saveData(data);
 
   calLogMode = null;
+  closeCalLogModal();
   renderCalendar(data);
   renderCalendarDetail(data);
   showToast('Routine logged');
